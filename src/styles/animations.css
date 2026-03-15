@@ -1,0 +1,251 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   DIALECTIX — AAA Animation System
+   Pure CSS keyframes. No canvas, no video, no heavy libraries.
+   Three systems: Breakthrough · Pressure · Rank-Up
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. BREAKTHROUGH SYSTEM ──────────────────────────────────────────────────
+
+   Trigger: entry.decisive === true
+   Winner  → golden glow, scale pulse, BREAKTHROUGH badge
+   Loser   → opacity drop, shake, crack SVG overlay
+   ─────────────────────────────────────────────────────────────────────────── */
+
+@keyframes btk-winner-glow {
+  0%   { box-shadow: 0 0  0  0  rgba(198,161,91,0),   inset 0 0  0  0 rgba(198,161,91,0); }
+  20%  { box-shadow: 0 0 22px 5px rgba(198,161,91,.5), inset 0 0 14px 0 rgba(198,161,91,.1); }
+  55%  { box-shadow: 0 0 32px 8px rgba(198,161,91,.38),inset 0 0 20px 0 rgba(198,161,91,.14); }
+  100% { box-shadow: 0 0  6px 2px rgba(198,161,91,.18),inset 0 0  0  0 rgba(198,161,91,0); }
+}
+
+@keyframes btk-winner-scale {
+  0%   { transform: scale(1);    }
+  30%  { transform: scale(1.05); }
+  65%  { transform: scale(1.02); }
+  100% { transform: scale(1);    }
+}
+
+@keyframes btk-border-flash {
+  0%,100% { border-color: rgba(198,161,91,.65); }
+  50%     { border-color: rgba(230,195,110,.95); }
+}
+
+@keyframes btk-badge-drop {
+  0%   { opacity: 0; transform: translateY(-12px) scale(.7);  }
+  50%  { opacity: 1; transform: translateY(3px)   scale(1.06); }
+  75%  { opacity: 1; transform: translateY(-1px)  scale(.98); }
+  100% { opacity: 1; transform: translateY(0)     scale(1);   }
+}
+
+@keyframes btk-badge-shimmer {
+  0%   { left: -100%; }
+  100% { left: 150%;  }
+}
+
+@keyframes btk-score-reveal {
+  from { opacity: 0; transform: translateY(6px) scale(.85); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);   }
+}
+
+@keyframes btk-loser-shake {
+  0%,100% { transform: translateX(0);    }
+  18%     { transform: translateX(-2px); }
+  36%     { transform: translateX(2px);  }
+  54%     { transform: translateX(-2px); }
+  72%     { transform: translateX(1.5px);}
+  88%     { transform: translateX(-1px); }
+}
+
+@keyframes btk-crack-in {
+  0%   { opacity: 0;   }
+  15%  { opacity: 1;   }
+  70%  { opacity: .75; }
+  100% { opacity: 0;   }
+}
+
+/* Applied classes */
+.btk-entry-winner {
+  position: relative;
+  animation:
+    btk-winner-scale 1.4s cubic-bezier(.22,1,.36,1) forwards,
+    btk-winner-glow  1.4s ease              forwards,
+    btk-border-flash  .6s ease              forwards;
+  border-color: rgba(198,161,91,.65) !important;
+  will-change: transform, box-shadow;
+}
+
+.btk-entry-winner-settled {
+  position: relative;
+  border-color: rgba(198,161,91,.45) !important;
+  box-shadow: 0 0 6px 1px rgba(198,161,91,.18);
+}
+
+.btk-entry-loser {
+  position: relative;
+  animation: btk-loser-shake .55s ease forwards;
+  opacity: .72;
+  transition: opacity .5s ease;
+}
+
+.btk-score-new {
+  animation: btk-score-reveal .35s cubic-bezier(.34,1.56,.64,1) forwards;
+}
+
+/* ── 2. PRESSURE SYSTEM ──────────────────────────────────────────────────────
+
+   Trigger: |scoreA − scoreB| > 0.8
+   Losing  → red tint overlay, avatar shake, "Pression montante" tag
+   Winning → green soft glow, "Dominance" tag
+   ─────────────────────────────────────────────────────────────────────────── */
+
+@keyframes prs-red-breathe {
+  0%,100% { opacity: .07; }
+  50%     { opacity: .17; }
+}
+
+@keyframes prs-avatar-tremble {
+  0%,100% { transform: translateX(0)     rotate(0deg);   }
+  20%     { transform: translateX(-1.5px) rotate(-.25deg);}
+  40%     { transform: translateX(1.5px)  rotate(.25deg); }
+  60%     { transform: translateX(-1px)   rotate(-.2deg); }
+  80%     { transform: translateX(1px)    rotate(.2deg);  }
+}
+
+@keyframes prs-tag-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0);    }
+}
+
+@keyframes prs-win-pulse {
+  0%,100% { box-shadow: 0 0  0  0 rgba(58,110,82,0);   }
+  50%     { box-shadow: 0 0 14px 3px rgba(58,110,82,.2); }
+}
+
+@keyframes prs-bar-fill {
+  from { width: 0%; }
+  to   { width: var(--prs-pct, 60%); }
+}
+
+/* Utility classes */
+.prs-losing-pane {
+  position: relative;
+  animation: prs-win-pulse 3s ease-in-out infinite; /* overridden per side below */
+}
+
+.prs-red-tint {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(ellipse at 50% 30%, rgba(140,58,48,.14) 0%, transparent 70%);
+  animation: prs-red-breathe 2.4s ease-in-out infinite;
+  z-index: 0;
+}
+
+.prs-avatar-shake {
+  animation: prs-avatar-tremble 3.2s ease-in-out infinite;
+  display: inline-block;
+}
+
+.prs-winning-glow {
+  animation: prs-win-pulse 3s ease-in-out infinite;
+}
+
+/* ── 3. RANK-UP SYSTEM ───────────────────────────────────────────────────────
+
+   Trigger: user rank badge changes to a higher tier
+   Effects → full-screen soft glow, badge scale drop, SVG particles
+   Duration: 2 seconds, click-skippable
+   ─────────────────────────────────────────────────────────────────────────── */
+
+@keyframes rku-bg-in {
+  0%   { opacity: 0; backdrop-filter: blur(0px);  }
+  20%  { opacity: 1; backdrop-filter: blur(18px); }
+  80%  { opacity: 1; backdrop-filter: blur(18px); }
+  100% { opacity: 0; backdrop-filter: blur(0px);  }
+}
+
+@keyframes rku-badge-slam {
+  0%   { transform: scale(.15) translateY(-40px) rotate(-18deg); opacity: 0; }
+  52%  { transform: scale(1.22) translateY(8px)   rotate(4deg);  opacity: 1; }
+  72%  { transform: scale(.93)  translateY(-4px)  rotate(-1deg); opacity: 1; }
+  86%  { transform: scale(1.05) translateY(2px)   rotate(.5deg); opacity: 1; }
+  100% { transform: scale(1)    translateY(0)     rotate(0deg);  opacity: 1; }
+}
+
+@keyframes rku-label-rise {
+  from { opacity: 0; transform: translateY(16px); letter-spacing: .8em; }
+  to   { opacity: 1; transform: translateY(0);    letter-spacing: .16em; }
+}
+
+@keyframes rku-sub-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+@keyframes rku-ring-spin {
+  from { transform: rotate(0deg);   }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes rku-ring-shrink {
+  0%,60% { opacity: .55; transform: scale(1);    }
+  100%   { opacity: 0;   transform: scale(1.45); }
+}
+
+@keyframes rku-particle {
+  0%   {
+    transform: translateY(0) translateX(0) rotate(0deg) scale(1);
+    opacity: .9;
+  }
+  100% {
+    transform:
+      translateY(var(--p-dy, -80px))
+      translateX(var(--p-dx, 0px))
+      rotate(var(--p-rot, 180deg))
+      scale(.2);
+    opacity: 0;
+  }
+}
+
+@keyframes rku-shine-sweep {
+  from { transform: translateX(-100%) skewX(-18deg); }
+  to   { transform: translateX(260%)  skewX(-18deg); }
+}
+
+@keyframes rku-dismiss-hint {
+  0%,80% { opacity: 0; }
+  100%   { opacity: .45; }
+}
+
+/* Overlay shell */
+.rku-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  background: rgba(246,241,232,.9);
+  animation: rku-bg-in 2s ease forwards;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  will-change: opacity;
+}
+
+/* ── REDUCED MOTION — respect prefers-reduced-motion ────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .btk-entry-winner,
+  .btk-entry-loser,
+  .prs-red-tint,
+  .prs-avatar-shake,
+  .prs-winning-glow,
+  .rku-overlay {
+    animation: none !important;
+    transition: none !important;
+  }
+  .btk-entry-winner        { border-color: rgba(198,161,91,.65) !important; }
+  .btk-entry-loser         { opacity: .72; }
+  .rku-overlay             { animation: rku-bg-in 0s forwards !important; }
+}
