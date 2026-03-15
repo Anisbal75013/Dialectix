@@ -1,0 +1,465 @@
+/* ── Tailwind CSS v4 ────────────────────────────────────────────────────────
+ * v4 remplace les 3 directives @tailwind par un seul @import.
+ * La configuration se fait désormais dans ce fichier via @theme.
+ * ─────────────────────────────────────────────────────────────────────────── */
+@import "tailwindcss";
+
+/* ── Thème Dialectix — variables CSS mappées sur le design system ──────────
+ * Permet d'utiliser les classes Tailwind comme bg-dx-A, text-dx-G, etc.
+ * ─────────────────────────────────────────────────────────────────────────── */
+@theme {
+  --color-dx-bg:    #F6F1E8;
+  --color-dx-txt:   #1A1A1A;
+  --color-dx-dim:   #5C4F38;
+  --color-dx-muted: #8A7860;
+  --color-dx-bd:    #D4C8A8;
+  --color-dx-A:     #2C4A6E;
+  --color-dx-B:     #8C3A30;
+  --color-dx-G:     #3A6E52;
+  --color-dx-Y:     #C6A15B;
+  --color-dx-O:     #A05A2C;
+  --color-dx-P:     #5A3A6E;
+
+  --breakpoint-xs: 375px;
+
+  --font-heading: 'Cinzel', serif;
+  --font-mono:    'JetBrains Mono', monospace;
+  --font-body:    'Inter', sans-serif;
+}
+
+/* ── Dialectix responsive layer ─────────────────────────────────────────────
+ * Ce fichier complète (sans écraser) le CSS embarqué dans App.jsx.
+ * Approche mobile-first : règles de base = mobile, surcharges = md/lg/xl.
+ * Import depuis src/main.jsx.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   1. RESET GLOBAL — sécurité anti-overflow horizontal
+   ═══════════════════════════════════════════════════════════════════════════ */
+html, body {
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2. NAV — burger mobile
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Sur mobile, cacher les liens nav et afficher le burger */
+@media (max-width: 767px) {
+  .nav {
+    padding: 0 16px;
+    height: 52px;
+    position: relative;
+  }
+
+  /* Tous les liens nav cachés par défaut sur mobile */
+  .nav-links {
+    display: none;
+    position: fixed;
+    top: 52px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(246, 241, 232, 0.98);
+    backdrop-filter: blur(24px);
+    flex-direction: column;
+    height: auto;
+    padding: 12px 0 24px;
+    z-index: 200;
+    overflow-y: auto;
+    border-top: 1px solid var(--bd);
+    box-shadow: 0 8px 32px rgba(40,28,8,.12);
+    align-items: stretch;
+    gap: 0;
+  }
+
+  /* Quand le menu est ouvert */
+  .nav-links.nav-open {
+    display: flex;
+  }
+
+  /* Chaque lien nav = taille touch-friendly */
+  .nl {
+    height: 48px;
+    padding: 0 20px;
+    font-size: .82rem;
+    border-bottom: none;
+    border-left: 3px solid transparent;
+    justify-content: flex-start;
+  }
+
+  .nl.on {
+    border-left-color: var(--Y);
+    border-bottom: none;
+    background: rgba(198,161,91,.06);
+  }
+
+  .nl:hover {
+    background: rgba(40,28,8,.04);
+  }
+
+  /* Masquer les stats ELO / badge dans la nav sur mobile pour économiser l'espace */
+  .nav-r .badge-pill,
+  .nav-r > div:not(:last-child) {
+    display: none;
+  }
+
+  /* Bouton Google connexion compact */
+  .b-google.b-sm {
+    padding: 6px 12px;
+    font-size: .7rem;
+  }
+}
+
+/* Tablette : compresser un peu les liens */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .nl {
+    padding: 0 8px;
+    font-size: .66rem;
+  }
+
+  .nav-logo {
+    margin-right: 10px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3. PAGES — scroll vertical sur mobile
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  html, body {
+    overflow: auto;        /* Unlock scroll sur mobile */
+  }
+
+  .app {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .page {
+    padding: 16px;
+    overflow-y: visible;
+    flex: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4. HOME PAGE
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  .home-hero {
+    padding: 28px 16px 20px;
+    text-align: center;
+  }
+
+  .hero-t {
+    font-size: clamp(1.6rem, 8vw, 2.4rem) !important;
+  }
+
+  .hero-btns {
+    flex-direction: column;
+    gap: 10px !important;
+    align-items: stretch;
+  }
+
+  .hero-btns .btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .hero-stats {
+    flex-direction: row;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .home-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  /* Sidebar → dessous sur mobile */
+  .home-side {
+    display: none;  /* caché sur petit mobile, visible dès tablette */
+  }
+
+  /* Bot grid : 2 colonnes sur mobile */
+  .bot-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .home-grid {
+    grid-template-columns: 1fr 260px !important;
+  }
+
+  .bot-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5. ARENA / DÉBAT — panes empilées sur mobile
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  .arena {
+    flex-direction: column !important;
+    gap: 0 !important;
+    overflow-y: auto !important;
+  }
+
+  .pane {
+    width: 100% !important;
+    min-width: 0 !important;
+    flex: none !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--bd);
+  }
+
+  /* Input de débat : pleine largeur */
+  .pane textarea,
+  .pane .fi {
+    font-size: 16px !important; /* Évite le zoom auto sur iOS */
+  }
+
+  /* Boutons d'action débat : tactiles */
+  .pane .btn {
+    min-height: 44px;
+    padding: 10px 16px;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .arena {
+    gap: 10px !important;
+  }
+
+  .pane {
+    min-width: 0;
+    flex: 1 !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   6. TOURNOI / CLASSEMENT — tableaux → liste sur mobile
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  /* Wrapper pour tableau scrollable horizontalement si trop large */
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 8px;
+    border: 1px solid var(--bd);
+  }
+
+  .table-wrap table {
+    min-width: 480px;
+  }
+
+  /* Cards pour les listes de classement */
+  .rank-row {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--bd2);
+    gap: 4px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   7. MODALS / OVERLAYS
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  /* Modal = plein écran sur mobile */
+  [class*="modal"],
+  [class*="overlay"],
+  [class*="popup"] {
+    border-radius: 12px 12px 0 0 !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    transform: none !important;
+    max-height: 90vh;
+    overflow-y: auto;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   8. FORMULAIRES — inputs tactiles
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  .fi {
+    font-size: 16px !important; /* Évite zoom iOS sur focus */
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+
+  .btn {
+    min-height: 44px;
+  }
+
+  .b-sm {
+    min-height: 40px;
+    padding: 8px 14px;
+  }
+
+  /* Boutons côte à côte → empilés */
+  .btn-group-mobile {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .btn-group-mobile .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   9. TYPOGRAPHIE RESPONSIVE
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  html { font-size: 15px; }
+
+  /* Titres de section plus lisibles */
+  .section-title {
+    font-size: .85rem !important;
+  }
+}
+
+@media (min-width: 768px) {
+  html { font-size: 14px; }
+}
+
+@media (min-width: 1280px) {
+  html { font-size: 14px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   10. ACADÉMIES — grille responsive
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  .acad-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .acad-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   11. HALL OF FAME — cards responsive
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  .hof-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .hof-card {
+    padding: 14px !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   12. SCORE / REPORT — layout responsive
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  .report-cols {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .score-bars {
+    flex-direction: column !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   13. TOAST — repositionné sur mobile
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  .toast {
+    top: auto !important;
+    bottom: 20px !important;
+    left: 16px !important;
+    right: 16px !important;
+    transform: none !important;
+    white-space: normal !important;
+    text-align: center;
+    justify-content: center;
+  }
+
+  @keyframes toastIn {
+    from { opacity: 0; bottom: 10px; }
+    to   { opacity: 1; bottom: 20px; }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   14. SAFE AREA INSETS — iPhone avec notch/home indicator
+   ═══════════════════════════════════════════════════════════════════════════ */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .app {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  @media (max-width: 767px) {
+    .nav {
+      padding-left: max(16px, env(safe-area-inset-left));
+      padding-right: max(16px, env(safe-area-inset-right));
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   15. UTILITAIRES CSS PERSONNALISÉS (CSS natif — compatible Tailwind v4)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Touch target minimum WCAG 2.5.5 */
+.touch-target { min-height: 44px; min-width: 44px; }
+
+/* Scroll horizontal sécurisé */
+.dx-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* Grilles responsive */
+.dx-grid-auto  { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+.dx-grid-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem; }
+
+@media (min-width: 640px)  { .dx-grid-auto  { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 640px)  { .dx-grid-stats { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1024px) { .dx-grid-auto  { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1024px) { .dx-grid-stats { grid-template-columns: repeat(5, 1fr); } }
+
+/* Padding de page responsive */
+.dx-page-padding { padding: 1rem; }
+@media (min-width: 768px)  { .dx-page-padding { padding: 1.5rem; } }
+@media (min-width: 1024px) { .dx-page-padding { padding: 1.5rem 2rem; } }
+
+/* Flex responsive */
+.dx-flex-responsive { display: flex; flex-direction: column; }
+@media (min-width: 640px) { .dx-flex-responsive { flex-direction: row; } }
+
+/* Bouton full-width mobile → auto desktop */
+.dx-btn-responsive { width: 100%; }
+@media (min-width: 640px) { .dx-btn-responsive { width: auto; } }
+
+/* Visibility helpers */
+.dx-hide-mobile  { display: none; }
+.dx-only-mobile  { display: block; }
+@media (min-width: 640px) {
+  .dx-hide-mobile { display: block; }
+  .dx-only-mobile { display: none; }
+}

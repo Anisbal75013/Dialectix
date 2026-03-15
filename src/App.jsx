@@ -19,7 +19,7 @@ import ScoreExplanationCard  from './ScoreExplanationCard.jsx';
 import NextObjectivePanel     from './NextObjectivePanel.jsx';
 import { markUserDebatedTopic } from './NextObjectivePanel.jsx';
 import RankProgressCard       from './RankProgressCard.jsx';
-import TournamentSystem       from './TournamentSystem.jsx';
+import TournamentSystem, { isAdmin } from './TournamentSystem.jsx';
 import DialectixActu          from './DialectixActu.jsx';
 import AdminWeeklyDebates     from './AdminWeeklyDebates.jsx';
 import CheckmateOverlay, { isCheckmate } from './CheckmateSystem.jsx';
@@ -28,7 +28,8 @@ import DialectixProfileQuestionnaire, { hasCompletedProfile, savePlayerProfile }
 import BattlesPage, { savePublicBattle } from './BattlesPage.jsx';
 import { storeProfileForMatchmaking } from './services/matchmakingService.js';
 import { hasReachedWeeklyLimit, incrementUserWeekDebateCount, filterSafeTopics } from './services/weeklyDebateService.js';
-import GuidesPage from './GuidesPage.jsx';
+import GuidesPage       from './GuidesPage.jsx';
+import AdminDashboard   from './AdminDashboard.jsx';
 import { isBetaBotBattle, hasReachedBotLimit, incrementBotBattleCount, remainingBotBattles } from './services/betaBotService.js';
 
 /* ─── BOT STYLE MAP ───────────────────────────────────────────────────────────
@@ -145,10 +146,13 @@ const pct    =(a,b)=>b?Math.round(a/b*100):0;
 const SS=async(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{}};
 const SG=async(k)=>{try{const r=localStorage.getItem(k);return r?JSON.parse(r):null}catch{return null}};
 
-/* ── SUPABASE BACKEND ──────────────────────────────────────── */
+/* ── SUPABASE CLIENT ───────────────────────────────────────────────────────────
+ * Valeurs injectées depuis .env.production / .env.development au build Vite.
+ * Ne jamais coller la service_role_key ici — uniquement l'anon key publique.
+ * ─────────────────────────────────────────────────────────────────────────── */
 const SB=createClient(
-  'https://qjvdzawnmgvzkvbhbdzy.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqdmR6YXdubWd2emt5Ymhkenl6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyOTk2ODYsImV4cCI6MjA4ODg3NTY4Nn0.vXI2eVXiwpnyzGT3YVoB_brPo4lP7aWeO1WcAtHnLjU'
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
 );
 
 // Upsert profil utilisateur → table "profiles"
@@ -288,13 +292,37 @@ const SEED_ACADEMIES=[
   {id:'ac4',name:'Société Critique',type:'society',icon:'🔍',desc:'Esprit critique systématique. Déconstruction des argumentaires adverses.',founder:'AnaLyse7',members:['s9','s10'],avgElo:1214,created:Date.now()-20*86400000,wins:44,debates:67},
 ];
 async function mockGoogleLogin(){
-  // Reuse an existing mock session across page refreshes so the user's ELO /
-  // history survive navigation without a real OAuth flow.
+  // 🔴 BUG CORRIGÉ : l'ancienne logique réutilisait dix_mock_session_v6 de façon
+  // permanente, ce qui faisait retourner TOUJOURS le premier utilisateur créé
+  // (souvent "Alexandre Martin") même après déconnexion.
+  //
+  // Nouvelle logique : on réutilise la session mock SEULEMENT si elle est encore
+  // valide du point de vue de la session Supabase courante. Si Supabase n'a pas
+  // de session active, on crée un nouveau profil frais pour éviter la réutilisation.
   try{
-    const saved=localStorage.getItem('dix_mock_session_v6');
-    if(saved){const parsed=JSON.parse(saved);if(parsed?.id)return parsed;}
-  }catch{}
-  const names=['Alexandre Martin','Camille Dupont','Lucas Bernard','Emma Thomas','Nathan Petit','Sofia Garcia','Théo Rousseau','Jade Lefebvre'];
+    // Vérifier si une session Supabase est active
+    const{data:{session}}=await SB.auth.getSession();
+    if(!session){
+      // Pas de session Supabase → créer un nouveau profil mock à chaque fois
+      // (ne pas réutiliser l'ancien pour éviter d'afficher le mauvais utilisateur)
+      localStorage.removeItem('dix_mock_session_v6');
+    } else {
+      // Session Supabase active → réutiliser seulement si c'est le même utilisateur
+      const saved=localStorage.getItem('dix_mock_session_v6');
+      if(saved){
+        const parsed=JSON.parse(saved);
+        if(parsed?.id&&(parsed.email===session.user?.email||parsed.id===session.user?.id)){
+          return parsed; // même utilisateur : on garde le profil persistant
+        }
+        // Sinon : purge (session appartient à quelqu'un d'autre)
+        localStorage.removeItem('dix_mock_session_v6');
+      }
+    }
+  }catch{
+    // En cas d'erreur Supabase, on repart sur un profil frais par sécurité
+    localStorage.removeItem('dix_mock_session_v6');
+  }
+  const names=['Camille Dupont','Lucas Bernard','Emma Thomas','Nathan Petit','Sofia Garcia','Théo Rousseau','Jade Lefebvre'];
   const name=names[rnd(0,names.length-1)];
   const id=`mock_${Date.now()}_${uid()}`;
   const fresh={
@@ -432,6 +460,15 @@ input,button,textarea,select{font-family:inherit}
 .nl.on{color:var(--A);border-bottom-color:var(--Y);font-weight:600}
 .nl.hot{color:var(--O)}
 .nav-r{display:flex;align-items:center;gap:10px;margin-left:auto}
+
+/* ── BURGER MENU (mobile only) ── */
+.nav-burger{display:none;flex-direction:column;justify-content:center;align-items:center;gap:5px;width:40px;height:40px;background:transparent;border:none;cursor:pointer;padding:6px;border-radius:6px;flex-shrink:0}
+.nav-burger:hover{background:rgba(40,28,8,.05)}
+.burger-line{display:block;width:22px;height:2px;background:var(--dim);border-radius:2px;transition:all .25s ease}
+.burger-line.open:nth-child(1){transform:translateY(7px) rotate(45deg)}
+.burger-line.open:nth-child(2){opacity:0;transform:scaleX(0)}
+.burger-line.open:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+@media(max-width:767px){.nav-burger{display:flex}}
 
 /* ── BUTTONS ── */
 .btn{font-family:var(--fB);font-size:.72rem;font-weight:600;letter-spacing:.01em;padding:8px 18px;border-radius:5px;border:1px solid transparent;cursor:pointer;transition:all .18s;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;line-height:1}
@@ -763,6 +800,77 @@ input,button,textarea,select{font-family:inherit}
 .hof-card{display:flex;align-items:center;gap:16px;padding:16px 18px;background:#FDFAF4;border-radius:8px;border:1px solid var(--bd);margin-bottom:8px;transition:all .2s;cursor:pointer;box-shadow:var(--sh)}
 .hof-card:hover{border-color:var(--A);box-shadow:var(--sh2);transform:translateX(2px)}
 .hof-card.gold{border-color:rgba(198,161,91,.4);box-shadow:0 2px 12px rgba(198,161,91,.12)}
+
+/* ── TABLET OVERRIDES (768px – 1023px) ───────────────────────────────────
+   Compensate for non-media-queried desktop rules in this same <style> tag
+   ─────────────────────────────────────────────────────────────────────── */
+@media(min-width:768px) and (max-width:1023px){
+  .nav-links{overflow-x:auto!important;scrollbar-width:none!important;-ms-overflow-style:none!important;flex-shrink:1!important}
+  .nav-links::-webkit-scrollbar{display:none!important}
+  .nl{padding:0 7px!important;font-size:.63rem!important;white-space:nowrap!important}
+  .nav-logo{margin-right:10px!important;font-size:.85rem!important}
+  .home-grid{grid-template-columns:1fr 240px!important}
+  .bot-grid{grid-template-columns:repeat(3,1fr)!important}
+}
+
+/* ── MOBILE RESPONSIVE OVERRIDES ─────────────────────────────────────────
+   Ces règles sont DANS le tag <style> injecté pour gagner la cascade contre
+   les règles non-media-queried ci-dessus (html,body overflow:hidden etc.)
+   ─────────────────────────────────────────────────────────────────────── */
+@media(max-width:767px){
+  html,body{overflow:auto!important;height:auto!important;font-size:15px!important}
+  .app{height:auto!important;min-height:100vh!important;overflow:visible!important}
+  .page{overflow-y:visible!important;flex:none!important;padding:16px!important}
+  /* ── NAV mobile : override display:flex des règles desktop ── */
+  .nav{padding:0 16px!important;height:52px!important}
+  .nav-links{display:none!important;position:fixed!important;top:52px!important;left:0!important;right:0!important;bottom:0!important;background:rgba(246,241,232,.98)!important;backdrop-filter:blur(24px)!important;flex-direction:column!important;height:calc(100vh - 52px)!important;padding:12px 0 24px!important;z-index:200!important;overflow-y:auto!important;border-top:1px solid var(--bd)!important;align-items:stretch!important;gap:0!important;flex:none!important}
+  .nav-links.nav-open{display:flex!important}
+  .nl{height:48px!important;padding:0 20px!important;font-size:.82rem!important;border-bottom:none!important;border-left:3px solid transparent!important;justify-content:flex-start!important}
+  .nl.on{border-left-color:var(--Y)!important;border-bottom:none!important;background:rgba(198,161,91,.06)!important}
+  /* Profile stats wrap */
+  .pstat-row{flex-wrap:wrap!important;gap:8px!important}
+  .pstat{min-width:58px!important;flex:1!important}
+  .home{overflow:visible!important;flex:none!important}
+  .home-grid{grid-template-columns:1fr!important;overflow:visible!important;min-height:0!important}
+  .home-main{overflow-y:visible!important;border-right:none!important;border-bottom:1px solid var(--bd)!important;min-width:0!important}
+  .home-side{display:none!important}
+  /* Prevent text truncation everywhere on mobile */
+  .profile-name,.wc-name,.hero-t{word-break:break-word!important;overflow-wrap:break-word!important}
+  /* Ensure all flex children can shrink */
+  .nav-r > *{flex-shrink:0}
+  .home-hero{padding:28px 16px 20px!important;text-align:center!important}
+  .hero-t{font-size:clamp(1.6rem,8vw,2.4rem)!important}
+  .hero-btns{flex-direction:column!important;gap:10px!important;align-items:stretch!important}
+  .hero-btns .btn{width:100%!important;justify-content:center!important;min-height:44px!important}
+  .hero-stats{flex-direction:row!important;gap:16px!important;justify-content:center!important;flex-wrap:wrap!important}
+  .arena{display:flex!important;flex-direction:column!important;gap:0!important;overflow-y:auto!important;flex:1!important}
+  .pane{width:100%!important;min-width:0!important;flex:none!important;border-right:none!important;border-bottom:1px solid var(--bd)!important}
+  .pane textarea,.pane .fi{font-size:16px!important}
+  .pane .btn{min-height:44px!important;padding:10px 16px!important}
+  .rep-grid{grid-template-columns:1fr!important}
+  .profile-head{flex-direction:column!important;align-items:center!important;text-align:center!important}
+  .elo-result{flex-direction:column!important;align-items:center!important}
+  .btn{min-height:44px!important}
+  .b-sm{min-height:40px!important;padding:8px 14px!important}
+  .fi{font-size:16px!important;min-height:44px!important;padding:10px 14px!important}
+  .toast{top:auto!important;bottom:20px!important;left:16px!important;right:16px!important;transform:none!important;white-space:normal!important;text-align:center!important;justify-content:center!important}
+  .modal-bg{align-items:flex-end!important;padding:0!important}
+  .modal{border-radius:12px 12px 0 0!important;max-width:100%!important;width:100%!important}
+  .bot-grid{grid-template-columns:repeat(2,1fr)!important;gap:8px!important}
+  .lb-head{grid-template-columns:36px 1fr 64px 60px!important;font-size:.58rem!important;padding:6px 10px!important}
+  .lb-head > *:last-child{display:none}
+  .lb-row{grid-template-columns:36px 1fr 64px 60px!important;padding:10px!important}
+  .lb-row > *:last-child{display:none}
+  .promo-box{padding:28px 20px!important;margin:16px!important}
+  .section-title{font-size:.85rem!important}
+  /* User banner : stack vertically, stats full width */
+  .user-banner{flex-direction:column!important;align-items:flex-start!important}
+  .user-banner-stats{width:100%!important;justify-content:space-around!important}
+  /* Format picker wrap */
+  .fmt-grid{flex-wrap:wrap!important}
+  /* Quick train header : stack on small */
+  .home-main > div > div:first-child{flex-wrap:wrap!important;gap:8px!important}
+}
 
 /* OBS CSS */
 `;
@@ -2278,11 +2386,37 @@ export default function DialectixV6(){
   const [platformStats,setPlatformStats]=useState({today:0,active:0,total:0});
   const [dailyTopic]=useState(DAILY_TOPICS[new Date().getDay()%DAILY_TOPICS.length]);
 
-  // ── INIT
+  // ── INIT : charge le profil localStorage puis vérifie immédiatement la session Supabase.
+  // Si l'email de la session active ne correspond pas à celui du profil stocké,
+  // on efface le cache périmé pour forcer onAuthStateChange à reconstruire le bon profil.
   useEffect(()=>{
     initPlatform();
     const saved=typeof localStorage!=='undefined'?localStorage.getItem('dix_user_v6'):null;
-    if(saved){try{setUser(JSON.parse(saved))}catch{}}
+    if(saved){
+      try{
+        const parsed=JSON.parse(saved);
+        setUser(parsed); // chargement optimiste — peut être corrigé ci-dessous
+        // Vérification asynchrone : est-ce que la session correspond ?
+        SB.auth.getSession().then(({data:{session}})=>{
+          if(!session){
+            // Pas de session Supabase active — on garde l'état mock/guest tel quel
+            return;
+          }
+          const sessionEmail=session.user?.email;
+          if(sessionEmail && parsed.email && sessionEmail!==parsed.email){
+            // 🔴 MISMATCH : le localStorage appartient à un autre utilisateur
+            console.warn('[Auth] localStorage mismatch — purge cache stale',{cached:parsed.email,session:sessionEmail});
+            localStorage.removeItem('dix_user_v6');
+            localStorage.removeItem('dix_mock_session_v6');
+            setUser(null); // effacer l'affichage erroné
+            // onAuthStateChange va reconstruire le bon profil automatiquement
+          }
+        }).catch(()=>{});
+      }catch{}
+    } else {
+      // Pas de cache local — vérifier si une session Supabase active existe déjà
+      // (ex: retour d'un redirect OAuth). onAuthStateChange s'en chargera.
+    }
   },[]);
 
   const saveUser=u=>{
@@ -2331,23 +2465,40 @@ export default function DialectixV6(){
       const su=session.user;
       // Check if profile already exists to avoid overwriting existing data
       const{data:existing}=await SB.from('profiles').select('id,elo,wins,losses,draws,mvp_count,tier').eq('id',su.id).single();
-      // Load richer client state from localStorage (history, achievements, etc.)
-      let localState={};
-      try{const s=localStorage.getItem('dix_user_v6');if(s)localState=JSON.parse(s);}catch(e){}
       const oauthName=su.user_metadata?.full_name||su.email?.split('@')[0]||'Débatteur';
       const oauthAvatar=su.user_metadata?.avatar_url||`https://ui-avatars.com/api/?name=${encodeURIComponent(oauthName)}&background=EAE3D6&color=2C4A6E&size=80`;
-      // Build merged profile: existing DB values > localStorage > defaults
+      // Charger le cache localStorage UNIQUEMENT s'il appartient au même utilisateur.
+      // 🔴 BUG CORRIGÉ : sans cette vérification, les stats/history/achievements
+      //    d'un autre utilisateur (ex: Alexandre Martin) contaminent le nouveau profil.
+      let localState={};
+      try{
+        const s=localStorage.getItem('dix_user_v6');
+        if(s){
+          const parsed=JSON.parse(s);
+          // Correspondance par id Supabase (priorité) ou par email
+          const sameUser=(parsed.id&&parsed.id===su.id)||(parsed.email&&parsed.email===su.email);
+          if(sameUser){
+            localState=parsed;
+          } else {
+            // Cache d'un autre utilisateur → on purge proprement
+            console.warn('[Auth] onAuthStateChange — cache appartient à',parsed.email,'≠',su.email,': purge');
+            localStorage.removeItem('dix_user_v6');
+            localStorage.removeItem('dix_mock_session_v6');
+          }
+        }
+      }catch(e){}
+      // Build merged profile: DB values > localStorage du même user > defaults
       const merged={
-        // Start with localStorage (has history, eloHistory, achievements)
+        // Spread localState seulement si c'est le même utilisateur (vérifié ci-dessus)
         ...localState,
-        // DB fields win over localStorage for core stats (they are more reliable)
+        // DB fields win over localStorage for core stats (source of vérité)
         elo:          existing?.elo       ?? localState.elo       ?? 1000,
         wins:         existing?.wins      ?? localState.wins      ?? 0,
         losses:       existing?.losses    ?? localState.losses    ?? 0,
         draws:        existing?.draws     ?? localState.draws     ?? 0,
         mvp_count:    existing?.mvp_count ?? localState.mvp_count ?? 0,
         tier:         existing?.tier      ?? localState.tier      ?? 'Beginner',
-        // Ensure required fields exist even for new users
+        // Champs côté client (non stockés en DB)
         debates:      localState.debates  ?? 0,
         streak:       localState.streak   ?? 0,
         xp:           localState.xp       ?? 0,
@@ -2359,7 +2510,7 @@ export default function DialectixV6(){
         history:      localState.history      ?? [],
         eloHistory:   localState.eloHistory   ?? [existing?.elo ?? 1000],
         joinedAt:     localState.joinedAt     ?? Date.now(),
-        // OAuth identity always wins (source of truth for id, name, email, avatar)
+        // L'identité OAuth a toujours la priorité (id, name, email, avatar)
         id:           su.id,
         name:         oauthName,
         email:        su.email || '',
@@ -2623,30 +2774,45 @@ export default function DialectixV6(){
     setDebateConfig(cfg);setDebateMode('online');setPhase('debate');
   };
 
-  /* ─── NAV ─── */
-  const Nav=()=>(
+  /* ─── NAV (responsive — burger menu sur mobile) ─── */
+  const Nav=()=>{
+    const [menuOpen,setMenuOpen]=useState(false);
+    const closeMenu=useCallback((cb)=>()=>{setMenuOpen(false);cb&&cb();},[]);
+    /* Ferme le menu si on clique dehors */
+    useEffect(()=>{
+      if(!menuOpen)return;
+      const handler=(e)=>{if(!e.target.closest('.nav'))setMenuOpen(false)};
+      document.addEventListener('mousedown',handler);
+      return()=>document.removeEventListener('mousedown',handler);
+    },[menuOpen]);
+    return(
     <nav className="nav">
-      <div className="nav-logo" onClick={()=>{setPage('home');setPhase('idle')}}>DIALECT<b>IX</b></div>
-      <div className="nav-links">
-        <button className={`nl ${page==='home'?'on':''}`} onClick={()=>{setPage('home');setPhase('idle')}}>🏠 Accueil</button>
-        <button className={`nl ${page==='train'?'on':''}`} onClick={()=>{setPage('train');setPhase('idle')}}>🤖 Entraînement</button>
-        <button className={`nl ${page==='compete'?'on':''} hot`} onClick={()=>{setPage('compete');setPhase('idle')}}>⚔️ Compétitif</button>
-        <button className={`nl ${page==='arena'?'on':''}`} onClick={()=>setPage('arena')} style={{color:'var(--P)',fontWeight:page==='arena'?700:400}}>🏟 Arena</button>
-        <button className={`nl ${page==='rank'?'on':''}`} onClick={()=>setPage('rank')}>🏆 Classement</button>
-        <button className={`nl ${page==='hall'?'on':''}`} onClick={()=>setPage('hall')}>⭐ Hall of Fame</button>
-        <button className={`nl ${page==='academies'?'on':''}`} onClick={()=>setPage('academies')}>🏛 Académies</button>
-        <button className={`nl ${page==='daily'?'on':''}`} onClick={()=>setPage('daily')} style={{color:'var(--O)'}}>📅 Défi</button>
-        <button className={`nl ${page==='tournament'?'on':''}`} onClick={()=>setPage('tournament')} style={{color:'var(--Y)',fontWeight:page==='tournament'?700:400}}>🏆 Tournoi Alpha</button>
-        <button className={`nl ${page==='actu'?'on':''}`} onClick={()=>setPage('actu')} style={{color:'var(--G)',fontWeight:page==='actu'?700:400}}>📰 Actu</button>
-        <button className={`nl ${page==='battles'?'on':''}`} onClick={()=>setPage('battles')} style={{color:'var(--O)',fontWeight:page==='battles'?700:400}}>👁 Battles</button>
-        <button className={`nl ${page==='guides'?'on':''}`} onClick={()=>setPage('guides')} style={{color:'var(--B)',fontWeight:page==='guides'?700:400}}>📘 Guides</button>
+      <div className="nav-logo" onClick={closeMenu(()=>{setPage('home');setPhase('idle')})}>DIALECT<b>IX</b></div>
+
+      {/* ── Desktop nav links ── */}
+      <div className={`nav-links${menuOpen?' nav-open':''}`}>
+        <button className={`nl ${page==='home'?'on':''}`} onClick={closeMenu(()=>{setPage('home');setPhase('idle')})}>🏠 Accueil</button>
+        <button className={`nl ${page==='train'?'on':''}`} onClick={closeMenu(()=>{setPage('train');setPhase('idle')})}>🤖 Entraînement</button>
+        <button className={`nl ${page==='compete'?'on':''} hot`} onClick={closeMenu(()=>{setPage('compete');setPhase('idle')})}>⚔️ Compétitif</button>
+        <button className={`nl ${page==='arena'?'on':''}`} onClick={closeMenu(()=>setPage('arena'))} style={{color:'var(--P)',fontWeight:page==='arena'?700:400}}>🏟 Arena</button>
+        <button className={`nl ${page==='rank'?'on':''}`} onClick={closeMenu(()=>setPage('rank'))}>🏆 Classement</button>
+        <button className={`nl ${page==='hall'?'on':''}`} onClick={closeMenu(()=>setPage('hall'))}>⭐ Hall of Fame</button>
+        <button className={`nl ${page==='academies'?'on':''}`} onClick={closeMenu(()=>setPage('academies'))}>🏛 Académies</button>
+        <button className={`nl ${page==='daily'?'on':''}`} onClick={closeMenu(()=>setPage('daily'))} style={{color:'var(--O)'}}>📅 Défi</button>
+        <button className={`nl ${page==='tournament'?'on':''}`} onClick={closeMenu(()=>setPage('tournament'))} style={{color:'var(--Y)',fontWeight:page==='tournament'?700:400}}>🏆 Tournoi Alpha</button>
+        <button className={`nl ${page==='actu'?'on':''}`} onClick={closeMenu(()=>setPage('actu'))} style={{color:'var(--G)',fontWeight:page==='actu'?700:400}}>📰 Actu</button>
+        <button className={`nl ${page==='battles'?'on':''}`} onClick={closeMenu(()=>setPage('battles'))} style={{color:'var(--O)',fontWeight:page==='battles'?700:400}}>👁 Battles</button>
+        <button className={`nl ${page==='guides'?'on':''}`} onClick={closeMenu(()=>setPage('guides'))} style={{color:'var(--B)',fontWeight:page==='guides'?700:400}}>📘 Guides</button>
+        {isAdmin()&&<button className={`nl ${page==='admin-dashboard'?'on':''}`} onClick={closeMenu(()=>setPage('admin-dashboard'))} style={{color:'var(--O)',fontWeight:page==='admin-dashboard'?700:400}}>⚙️ Dashboard</button>}
       </div>
+
+      {/* ── Right section : ELO + badge + avatar / connexion ── */}
       <div className="nav-r">
         {user&&<div style={{fontFamily:'var(--fH)',fontSize:'.95rem',color:'var(--Y)'}}>{user.elo}</div>}
         {user&&<BadgePill elo={user.elo}/>}
         {user&&user.streak>2&&<div style={{fontFamily:'var(--fM)',fontSize:'.6rem',color:'var(--O)',background:'rgba(160,90,44,.1)',border:'1px solid rgba(160,90,44,.25)',borderRadius:20,padding:'3px 10px'}}>🔥 {user.streak}</div>}
         {user?(
-          <div style={{width:30,height:30,borderRadius:'50%',border:`2px solid ${getBadge(user.elo).color}`,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'.85rem'}} onClick={()=>setPage('profile')}>
+          <div style={{width:30,height:30,borderRadius:'50%',border:`2px solid ${getBadge(user.elo).color}`,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'.85rem'}} onClick={()=>{setMenuOpen(false);setPage('profile')}}>
             {user.avatar?<img src={user.avatar} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:<span>{user.name[0]}</span>}
           </div>
         ):(
@@ -2655,9 +2821,23 @@ export default function DialectixV6(){
             Connexion
           </button>
         )}
+
+        {/* ── Burger button — visible seulement sur mobile (via CSS) ── */}
+        <button
+          className="nav-burger"
+          onClick={()=>setMenuOpen(o=>!o)}
+          aria-label={menuOpen?'Fermer le menu':'Ouvrir le menu'}
+          aria-expanded={menuOpen}
+        >
+          {/* 3 lignes → croix selon état */}
+          <span className={`burger-line${menuOpen?' open':''}`}/>
+          <span className={`burger-line${menuOpen?' open':''}`}/>
+          <span className={`burger-line${menuOpen?' open':''}`}/>
+        </button>
       </div>
     </nav>
   );
+  };
 
   /* ─── HOME PAGE ─── */
   const HomePage=()=>{
@@ -2683,9 +2863,9 @@ export default function DialectixV6(){
         <div className="home-grid">
           <div className="home-main">
             {/* User banner */}
-            {user&&<div style={{background:'linear-gradient(135deg,rgba(44,74,110,.06),rgba(90,58,110,.06))',border:'1px solid var(--bd)',borderRadius:10,padding:'14px 18px',display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+            {user&&<div className="user-banner" style={{background:'linear-gradient(135deg,rgba(44,74,110,.06),rgba(90,58,110,.06))',border:'1px solid var(--bd)',borderRadius:10,padding:'14px 18px',display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
               <AvatarBadge user={user} size={44}/>
-              <div style={{flex:1}}>
+              <div style={{flex:1,minWidth:0}}>
                 <div style={{fontFamily:'var(--fH)',fontSize:'1.1rem',letterSpacing:'.06em'}}>{user.name}</div>
                 <div style={{display:'flex',alignItems:'center',gap:8,marginTop:4,flexWrap:'wrap'}}>
                   <BadgePill elo={user.elo}/>
@@ -2694,7 +2874,7 @@ export default function DialectixV6(){
                 </div>
                 <div style={{marginTop:8,maxWidth:280}}><RankBar elo={user.elo}/></div>
               </div>
-              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              <div className="user-banner-stats" style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                 {[['Débats',user.debates],['Victoires',user.wins],['XP',user.xp]].map(([l,v])=>(
                   <div key={l} style={{textAlign:'center',background:'var(--s2)',borderRadius:6,padding:'6px 12px'}}><div style={{fontFamily:'var(--fH)',fontSize:'1.1rem'}}>{v}</div><div style={{fontFamily:'var(--fM)',fontSize:'.52rem',color:'var(--muted)',textTransform:'uppercase'}}>{l}</div></div>
                 ))}
@@ -3431,6 +3611,11 @@ export default function DialectixV6(){
 
         {/* ── GUIDES PAGE ───────────────────────────────────────────────────── */}
         {showNav&&page==='guides'&&<GuidesPage setPage={setPage}/>}
+
+        {/* ── ADMIN DASHBOARD ───────────────────────────────────────────────── */}
+        {showNav&&page==='admin-dashboard'&&isAdmin()&&(
+          <AdminDashboard onBack={()=>setPage('home')}/>
+        )}
 
         {/* ── BOT BADGE OVERLAY (shown during beta bot debates) ─────────────── */}
         {inDebate&&debateConfig?.botConfig?.isBetaBot&&(
