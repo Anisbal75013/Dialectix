@@ -322,8 +322,9 @@ export default function SophismDuel({ user, saveUser, showToast }) {
     (async () => {
       eloDelta = await maybeAddElo(user, saveUser, correct, total);
       if (user) {
-        saveUser(prev => ({ ...prev, xp: (prev?.xp || 0) + xpGained }));
-        await upsertDuelStats(user.id, correct, total, correct, byType);
+        // Use direct object form — App.jsx saveUser doesn't support functional updates
+        saveUser({ ...user, xp: (user?.xp || 0) + xpGained, elo: (user?.elo || 1000) + eloDelta });
+        await upsertDuelStats(user?.id, correct, total, correct, byType);
       }
       const newWorld = await getWorldRecord();
       setWorldRecord(newWorld);
