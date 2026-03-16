@@ -26,7 +26,7 @@ const FALLACIES = [
 ];
 
 // ─── Arguments pré-générés avec sophismes (fallback si API indisponible) ──────
-const SEED_DUELS = [
+export const SEED_DUELS = [
   {
     argument: "Ce politicien a proposé de réduire les impôts, mais il a triché dans ses propres déclarations fiscales en 2018 — pourquoi l'écouter sur ce sujet ?",
     fallacyId: 'ad_hominem',
@@ -102,9 +102,12 @@ export default function SophismDuel({ user, saveUser, showToast }) {
   const storageKey = 'dix_sophism_duel_v1';
 
   // État
-  const [phase, setPhase] = useState('intro');   // intro | playing | result | done
-  const [duel, setDuel] = useState(null);         // { argument, fallacyId, explanation }
-  const [selected, setSelected] = useState(null); // id du sophisme sélectionné
+  const [phase, setPhase] = useState('intro');           // intro | playing | result | done
+  const [duel, setDuel] = useState(null);                // { argument, fallacyId, explanation }
+  const [selectedAnswer, setSelectedAnswer] = useState(null); // id du sophisme sélectionné par le joueur
+  // Alias court pour la rétrocompatibilité interne
+  const selected = selectedAnswer;
+  const setSelected = setSelectedAnswer;
   const [timeLeft, setTimeLeft] = useState(DUEL_DURATION);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);     // { correct, xpGained }
@@ -184,14 +187,14 @@ export default function SophismDuel({ user, saveUser, showToast }) {
     }
   };
 
-  // Mélanger les choix (bonne réponse + 3 distracteurs)
+  // Tri déterministe : correct + 3 distracteurs, tous classés alphabétiquement par label
+  // → l'ordre ne change jamais d'un rendu à l'autre pour la même question
   const getChoices = (correctId) => {
     const correct = FALLACIES.find(f => f.id === correctId);
-    if (!correct) return FALLACIES.slice(0, 4);
-    const others = FALLACIES.filter(f => f.id !== correctId)
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 3);
-    return [...others, correct].sort(() => Math.random() - 0.5);
+    if (!correct) return FALLACIES.slice(0, 4).sort((a, b) => a.label.localeCompare(b.label, 'fr'));
+    // Distracteurs stables : les 3 premiers de FALLACIES (hors correct) par ordre d'index
+    const others = FALLACIES.filter(f => f.id !== correctId).slice(0, 3);
+    return [...others, correct].sort((a, b) => a.label.localeCompare(b.label, 'fr'));
   };
 
   const choices = duel ? getChoices(duel.fallacyId) : [];

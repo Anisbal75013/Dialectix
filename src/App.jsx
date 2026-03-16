@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from '@supabase/supabase-js';
 import { callClaude } from './claude.js';
 import AcademyMap    from './AcademyMap.jsx';
-import SophismDuel   from './SophismDuel.jsx';
+import SophismDuel, { SEED_DUELS } from './SophismDuel.jsx';
 import CompetitiveLobby from './CompetitiveLobby.jsx';
 
 /* ─── BACKEND URL ─────────────────────────────────────────────────────────────
@@ -92,6 +92,58 @@ const FORMATS=[
     readSec:420, writeSec:600,
     tooltip:'🔬 Deep — 7 min lecture / 10 min rédaction · Analyse approfondie'},
 ];
+
+// ── Règles détaillées par format (affiché dans le modal de format) ─────────────
+const FORMAT_RULES={
+  blitz:{
+    icon:'⚡', title:'Blitz — Preuve par 3',
+    desc:'Le format ultra-rapide. Chaque argument doit être concis et percutant.',
+    rules:[
+      {icon:'📖',label:'Lecture du sujet','val':'30 secondes'},
+      {icon:'✍️',label:'Rédaction de l\'argument','val':'45 secondes'},
+      {icon:'⚔️',label:'Nombre de phases','val':'3 tours (Exposé, Réfutation, Conclusion)'},
+      {icon:'⏱',label:'Durée totale estimée','val':'~5 minutes'},
+      {icon:'🎯',label:'Conseil stratégique','val':'Allez droit au but — une seule idée forte par argument'},
+    ],
+    color:'var(--B)',
+  },
+  rapid:{
+    icon:'🏃',title:'Rapid — Duel de Rhéteurs',
+    desc:'Le format équilibré pour des débats techniques avec des arguments solides.',
+    rules:[
+      {icon:'📖',label:'Lecture du sujet','val':'1 minute'},
+      {icon:'✍️',label:'Rédaction de l\'argument','val':'2 minutes'},
+      {icon:'⚔️',label:'Nombre de phases','val':'4 tours complets'},
+      {icon:'⏱',label:'Durée totale estimée','val':'~10 minutes'},
+      {icon:'🎯',label:'Conseil stratégique','val':'Introduisez des preuves et anticipez les objections'},
+    ],
+    color:'var(--G)',
+  },
+  standard:{
+    icon:'📚',title:'Standard — Format Recommandé',
+    desc:'Le format canonique. Temps suffisant pour développer une argumentation structurée.',
+    rules:[
+      {icon:'📖',label:'Lecture du sujet','val':'3 minutes'},
+      {icon:'✍️',label:'Rédaction de l\'argument','val':'5 minutes'},
+      {icon:'⚔️',label:'Nombre de phases','val':'5 tours (Exposé, 2×Arguments, Réfutation, Conclusion)'},
+      {icon:'⏱',label:'Durée totale estimée','val':'~20 minutes'},
+      {icon:'🎯',label:'Conseil stratégique','val':'Structure : Thèse → Argument × 2 → Preuves → Conclusion'},
+    ],
+    color:'var(--A)',
+  },
+  deep:{
+    icon:'🔬',title:'Deep — Analyse Approfondie',
+    desc:'Réservé aux débatteurs expérimentés souhaitant explorer toute la complexité d\'un sujet.',
+    rules:[
+      {icon:'📖',label:'Lecture du sujet','val':'7 minutes'},
+      {icon:'✍️',label:'Rédaction de l\'argument','val':'10 minutes'},
+      {icon:'⚔️',label:'Nombre de phases','val':'6 tours + synthèse finale'},
+      {icon:'⏱',label:'Durée totale estimée','val':'~45 minutes'},
+      {icon:'🎯',label:'Conseil stratégique','val':'Développez une ontologie du sujet et réfutez point par point'},
+    ],
+    color:'var(--Y)',
+  },
+};
 
 // ── Limite d'entraînement quotidien pour les comptes gratuits ──────────────────
 const TRAINING_FREE_DAILY_LIMIT = 5;
@@ -2411,8 +2463,9 @@ export default function DialectixV6(){
   const [selFormat,setSelFormat]=useState('standard');
   const [checkmateEntry,setCheckmateEntry]=useState(null); // Module 3 — Checkmate
   const [showProfileQ,setShowProfileQ]=useState(false);   // Profile questionnaire gate
-  const [wisdomQuote,setWisdomQuote]=useState(null);       // Feature 7 — Citation de sagesse
+  const [wisdomQuote,setWisdomQuote]=useState(null);          // Feature 7 — Citation de sagesse
   const [tournamentRulesOpen,setTournamentRulesOpen]=useState(false); // Feature 6 — Règles tournoi
+  const [formatModalId,setFormatModalId]=useState(null);      // Feature R3 — Modal règles de format
 
   // ── MATCHMAKING
   const [mmPhase,setMMPhase]=useState('idle'); // idle|searching|timedout
@@ -2971,19 +3024,50 @@ export default function DialectixV6(){
               </div>
             </div>
 
-            {/* Daily challenge */}
+            {/* Duel Rhétorique — aperçu accueil */}
             <div>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
-                <div style={{fontFamily:'var(--fH)',fontSize:'1rem',letterSpacing:'.1em',textTransform:'uppercase'}}>📅 Défi du jour</div>
+                <div style={{fontFamily:'var(--fH)',fontSize:'1rem',letterSpacing:'.1em',textTransform:'uppercase'}}>🔍 Duel Rhétorique</div>
                 <button className="btn b-ghost b-sm" onClick={()=>setPage('daily')}>Participer →</button>
               </div>
-              <div className="daily-card">
-                <div className="daily-badge">{new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}</div>
-                <div className="daily-topic">{dailyTopic}</div>
-                {user&&<div style={{marginTop:8}}>
-                  <div style={{display:'flex',justifyContent:'space-between',fontFamily:'var(--fM)',fontSize:'.55rem',color:'var(--muted)',marginBottom:4}}><span>XP {user.xp}</span><span>Niveau {user.level}</span></div>
-                  <div className="xp-bar"><div className="xp-fill" style={{width:`${user.xp%100}%`}}/></div>
-                </div>}
+              <div style={{
+                background:'linear-gradient(135deg,rgba(44,74,110,.06) 0%,rgba(140,58,48,.04) 100%)',
+                border:'1px solid var(--bd)',borderLeft:'4px solid var(--B)',
+                borderRadius:12,padding:'18px 18px 14px',
+                boxShadow:'var(--sh)',position:'relative',overflow:'hidden',
+              }}>
+                {/* Fond décoratif */}
+                <div style={{position:'absolute',top:-14,right:-14,fontSize:'4rem',opacity:.05,pointerEvents:'none',userSelect:'none'}}>🔍</div>
+                {/* Date */}
+                <div style={{fontFamily:'var(--fM)',fontSize:'.56rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.12em',marginBottom:8}}>
+                  📅 {new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}
+                </div>
+                {/* Aperçu argument du jour */}
+                <p style={{fontFamily:'var(--fC)',fontSize:'.92rem',color:'var(--txt)',lineHeight:1.75,fontStyle:'italic',margin:'0 0 14px',borderLeft:'2px solid var(--bd2)',paddingLeft:10}}>
+                  « {SEED_DUELS[new Date().getDay() % SEED_DUELS.length]?.argument.slice(0,120)}… »
+                </p>
+                {/* Stats + XP */}
+                <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                  {[['⏱','60s'],['🎯','+50 XP'],['📘','+10 XP']].map(([i,v])=>(
+                    <div key={v} style={{background:'var(--s2)',border:'1px solid var(--bd)',borderRadius:6,padding:'4px 10px',display:'flex',alignItems:'center',gap:5}}>
+                      <span style={{fontSize:'.75rem'}}>{i}</span>
+                      <span style={{fontFamily:'var(--fH)',fontSize:'.7rem',color:'var(--A)'}}>{v}</span>
+                    </div>
+                  ))}
+                  <div style={{flex:1}}/>
+                  <button className="btn b-a b-sm" onClick={()=>setPage('daily')} style={{fontSize:'.65rem'}}>
+                    ⚔️ Commencer le Duel
+                  </button>
+                </div>
+                {/* Barre XP joueur */}
+                {user&&(
+                  <div style={{marginTop:12}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontFamily:'var(--fM)',fontSize:'.52rem',color:'var(--muted)',marginBottom:3}}>
+                      <span>XP {user.xp}</span><span>Niveau {user.level}</span>
+                    </div>
+                    <div className="xp-bar"><div className="xp-fill" style={{width:`${user.xp%100}%`}}/></div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -3053,13 +3137,13 @@ export default function DialectixV6(){
             <div style={{fontFamily:'var(--fM)',fontSize:'.6rem',color:'var(--muted)',marginTop:3}}>Sans login requis · N'affecte pas le classement</div>
           </div>
           <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
-            {/* Sélecteur de format avec tooltips */}
+            {/* Sélecteur de format avec tooltip natif + modal règles au clic */}
             <div style={{display:'flex',gap:4,position:'relative'}}>
               {FORMATS.map(f=>(
                 <div key={f.id} style={{position:'relative',display:'inline-block'}} className="fmt-tooltip-wrap">
                   <button className={`fmt-btn ${selFormat===f.id?'on':''}`}
-                    onClick={()=>setSelFormat(f.id)}
-                    title={f.tooltip}>
+                    title={f.tooltip}
+                    onClick={()=>{setSelFormat(f.id);setFormatModalId(f.id);}}>
                     {f.label}
                   </button>
                 </div>
@@ -3906,6 +3990,50 @@ export default function DialectixV6(){
 
         {/* ONBOARDING — shown once per browser, highest z-index after error boundary */}
         {showOnboarding&&<OnboardingModal/>}
+
+        {/* ── FORMAT RULES MODAL ────────────────────────────────────────────── */}
+        {formatModalId&&FORMAT_RULES[formatModalId]&&(()=>{
+          const fr=FORMAT_RULES[formatModalId];
+          return(
+            <div style={{position:'fixed',inset:0,zIndex:900,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 16px',background:'rgba(10,8,4,.55)',backdropFilter:'blur(6px)'}}
+              onClick={()=>setFormatModalId(null)}>
+              <div style={{background:'#FDFAF4',borderRadius:16,padding:'28px 26px',maxWidth:480,width:'100%',boxShadow:'0 20px 60px rgba(0,0,0,.25)',border:'1px solid var(--bd)',animation:'slideUp .3s ease'}}
+                onClick={e=>e.stopPropagation()}>
+                {/* Header */}
+                <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16}}>
+                  <div>
+                    <div style={{fontSize:'2rem',marginBottom:4}}>{fr.icon}</div>
+                    <div style={{fontFamily:'var(--fH)',fontSize:'1.1rem',letterSpacing:'.08em',color:'var(--txt)',marginBottom:4}}>{fr.title}</div>
+                    <div style={{fontFamily:'var(--fC)',fontSize:'.82rem',color:'var(--dim)',fontStyle:'italic',lineHeight:1.5}}>{fr.desc}</div>
+                  </div>
+                  <button onClick={()=>setFormatModalId(null)}
+                    style={{background:'var(--s2)',border:'1px solid var(--bd)',borderRadius:8,padding:'5px 10px',cursor:'pointer',fontFamily:'var(--fM)',fontSize:'.65rem',color:'var(--muted)',flexShrink:0,marginLeft:12}}>
+                    ✕ Fermer
+                  </button>
+                </div>
+                {/* Divider */}
+                <div style={{height:1,background:'var(--bd)',marginBottom:16}}/>
+                {/* Rules list */}
+                <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                  {fr.rules.map((r,i)=>(
+                    <div key={i} style={{display:'flex',alignItems:'flex-start',gap:12,padding:'10px 14px',background:'var(--s1)',borderRadius:9,border:'1px solid var(--bd)'}}>
+                      <span style={{fontSize:'1.1rem',flexShrink:0}}>{r.icon}</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontFamily:'var(--fM)',fontSize:'.56rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.1em',marginBottom:2}}>{r.label}</div>
+                        <div style={{fontFamily:'var(--fB)',fontSize:'.75rem',fontWeight:600,color:'var(--txt)'}}>{r.val}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* CTA */}
+                <button className="btn b-a b-lg" style={{width:'100%',justifyContent:'center',marginTop:18}}
+                  onClick={()=>setFormatModalId(null)}>
+                  ✓ Compris — Format {FORMATS.find(f=>f.id===formatModalId)?.label} sélectionné
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── FEATURE 7 — CITATION DE SAGESSE ──────────────────────────────── */}
         {wisdomQuote&&(
