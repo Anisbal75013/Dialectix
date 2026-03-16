@@ -4,6 +4,7 @@ import { callClaude } from './claude.js';
 import AcademyMap    from './AcademyMap.jsx';
 import SophismDuel, { SEED_DUELS } from './SophismDuel.jsx';
 import CompetitiveLobby from './CompetitiveLobby.jsx';
+import ArchitectMode from './ArchitectMode.jsx';
 
 /* ─── BACKEND URL ─────────────────────────────────────────────────────────────
  * Set VITE_BACKEND_URL in .env.development / .env.production.
@@ -2916,6 +2917,7 @@ export default function DialectixV6(){
         <button className={`nl ${page==='hall'?'on':''}`} onClick={closeMenu(()=>setPage('hall'))}>⭐ Hall of Fame</button>
         <button className={`nl ${page==='academies'?'on':''}`} onClick={closeMenu(()=>setPage('academies'))}>🏛 Académies</button>
         <button className={`nl ${page==='daily'?'on':''}`} onClick={closeMenu(()=>setPage('daily'))} style={{color:'var(--O)'}}>🔍 Défi</button>
+        <button className={`nl ${page==='architect'?'on':''}`} onClick={closeMenu(()=>setPage('architect'))} style={{color:'var(--A)',fontWeight:page==='architect'?700:400}}>🏛 Architecte</button>
         <button className={`nl ${page==='academy-map'?'on':''}`} onClick={closeMenu(()=>setPage('academy-map'))} style={{color:'var(--G)',fontWeight:page==='academy-map'?700:400}}>🏰 Mon Académie</button>
         <button className={`nl ${page==='tournament'?'on':''}`} onClick={closeMenu(()=>setPage('tournament'))} style={{color:'var(--Y)',fontWeight:page==='tournament'?700:400}}>🏆 Tournoi Alpha</button>
         <button className={`nl ${page==='actu'?'on':''}`} onClick={closeMenu(()=>setPage('actu'))} style={{color:'var(--G)',fontWeight:page==='actu'?700:400}}>📰 Actu</button>
@@ -3024,50 +3026,49 @@ export default function DialectixV6(){
               </div>
             </div>
 
-            {/* Duel Rhétorique — aperçu accueil */}
+            {/* Duel Rhétorique Speed Run — aperçu accueil */}
             <div>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
-                <div style={{fontFamily:'var(--fH)',fontSize:'1rem',letterSpacing:'.1em',textTransform:'uppercase'}}>🔍 Duel Rhétorique</div>
-                <button className="btn b-ghost b-sm" onClick={()=>setPage('daily')}>Participer →</button>
+                <div style={{fontFamily:'var(--fH)',fontSize:'1rem',letterSpacing:'.1em',textTransform:'uppercase'}}>⚡ Duel Rhétorique : Speed Run</div>
+                <button className="btn b-ghost b-sm" onClick={()=>setPage('daily')}>Jouer →</button>
               </div>
               <div style={{
-                background:'linear-gradient(135deg,rgba(44,74,110,.06) 0%,rgba(140,58,48,.04) 100%)',
-                border:'1px solid var(--bd)',borderLeft:'4px solid var(--B)',
-                borderRadius:12,padding:'18px 18px 14px',
+                background:'linear-gradient(135deg,rgba(140,58,48,.05) 0%,rgba(44,74,110,.05) 100%)',
+                border:'1px solid rgba(140,58,48,.2)',borderLeft:'4px solid var(--B)',
+                borderRadius:12,padding:'16px 18px 14px',
                 boxShadow:'var(--sh)',position:'relative',overflow:'hidden',
               }}>
-                {/* Fond décoratif */}
-                <div style={{position:'absolute',top:-14,right:-14,fontSize:'4rem',opacity:.05,pointerEvents:'none',userSelect:'none'}}>🔍</div>
-                {/* Date */}
-                <div style={{fontFamily:'var(--fM)',fontSize:'.56rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.12em',marginBottom:8}}>
-                  📅 {new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}
+                <div style={{position:'absolute',top:-10,right:-10,fontSize:'5rem',opacity:.04,pointerEvents:'none',userSelect:'none'}}>⚡</div>
+                {/* Records row */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+                  {(()=>{
+                    let pb=0;try{pb=JSON.parse(localStorage.getItem('dix_speedrun_v1')||'{}').best||0}catch{}
+                    return[
+                      ['🏅 Record Personnel',pb,'sophismes/60s','var(--A)'],
+                      ['🌍 Meilleur mondial','?','chargement…','var(--Y)'],
+                    ].map(([label,val,sub,color])=>(
+                      <div key={label} style={{background:'var(--s1)',border:'1px solid var(--bd)',borderRadius:8,padding:'8px 12px',textAlign:'center'}}>
+                        <div style={{fontFamily:'var(--fM)',fontSize:'.48rem',color:'var(--muted)',marginBottom:3}}>{label}</div>
+                        <div style={{fontFamily:'var(--fH)',fontSize:'1.3rem',color}}>{val}</div>
+                        <div style={{fontFamily:'var(--fM)',fontSize:'.44rem',color:'var(--muted)'}}>{sub}</div>
+                      </div>
+                    ));
+                  })()}
                 </div>
-                {/* Aperçu argument du jour */}
-                <p style={{fontFamily:'var(--fC)',fontSize:'.92rem',color:'var(--txt)',lineHeight:1.75,fontStyle:'italic',margin:'0 0 14px',borderLeft:'2px solid var(--bd2)',paddingLeft:10}}>
-                  « {SEED_DUELS[new Date().getDay() % SEED_DUELS.length]?.argument.slice(0,120)}… »
+                {/* Argument preview */}
+                <p style={{fontFamily:'var(--fC)',fontSize:'.88rem',color:'var(--txt)',lineHeight:1.7,fontStyle:'italic',margin:'0 0 12px',borderLeft:'2px solid var(--bd2)',paddingLeft:10}}>
+                  « {SEED_DUELS[new Date().getDay()%SEED_DUELS.length]?.argument.slice(0,110)}… »
                 </p>
-                {/* Stats + XP */}
-                <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-                  {[['⏱','60s'],['🎯','+50 XP'],['📘','+10 XP']].map(([i,v])=>(
-                    <div key={v} style={{background:'var(--s2)',border:'1px solid var(--bd)',borderRadius:6,padding:'4px 10px',display:'flex',alignItems:'center',gap:5}}>
-                      <span style={{fontSize:'.75rem'}}>{i}</span>
-                      <span style={{fontFamily:'var(--fH)',fontSize:'.7rem',color:'var(--A)'}}>{v}</span>
+                <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                  {[['⏱','60s'],['🔥','Combo ×'],['🏆','ELO boost']].map(([i,v])=>(
+                    <div key={v} style={{background:'var(--s2)',border:'1px solid var(--bd)',borderRadius:6,padding:'3px 9px',display:'flex',alignItems:'center',gap:4}}>
+                      <span style={{fontSize:'.7rem'}}>{i}</span>
+                      <span style={{fontFamily:'var(--fH)',fontSize:'.65rem',color:'var(--A)'}}>{v}</span>
                     </div>
                   ))}
                   <div style={{flex:1}}/>
-                  <button className="btn b-a b-sm" onClick={()=>setPage('daily')} style={{fontSize:'.65rem'}}>
-                    ⚔️ Commencer le Duel
-                  </button>
+                  <button className="btn b-a b-sm" onClick={()=>setPage('daily')} style={{fontSize:'.62rem'}}>⚡ Speed Run</button>
                 </div>
-                {/* Barre XP joueur */}
-                {user&&(
-                  <div style={{marginTop:12}}>
-                    <div style={{display:'flex',justifyContent:'space-between',fontFamily:'var(--fM)',fontSize:'.52rem',color:'var(--muted)',marginBottom:3}}>
-                      <span>XP {user.xp}</span><span>Niveau {user.level}</span>
-                    </div>
-                    <div className="xp-bar"><div className="xp-fill" style={{width:`${user.xp%100}%`}}/></div>
-                  </div>
-                )}
               </div>
             </div>
           </div>
@@ -3803,6 +3804,9 @@ export default function DialectixV6(){
         {showNav&&page==='academies'&&<AcademiesPage/>}
         {showNav&&page==='daily'&&(
           <SophismDuel user={user} saveUser={saveUser} showToast={showToast}/>
+        )}
+        {showNav&&page==='architect'&&(
+          <ArchitectMode user={user} saveUser={saveUser} showToast={showToast}/>
         )}
         {/* ── ARENA — modular, does not affect existing debate logic ── */}
         {showNav&&page==='arena'&&<ArenaPage user={user} saveUser={saveUser} showToast={showToast} setPage={setPage} leaderboard={leaderboard} supabase={SB}/>}

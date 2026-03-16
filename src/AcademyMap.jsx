@@ -106,8 +106,30 @@ function Stars({ count, total = 4 }) {
   );
 }
 
+// ─── Mode link badge (overlaid on building) ───────────────────────────────────
+function ModeLinkBadge({ label, icon, color, onClick }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onClick={e => { e.stopPropagation(); onClick(); }}
+      style={{
+        position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)',
+        background: hover ? color : `${color}cc`,
+        color: '#fff', borderRadius: 20, padding: '3px 10px',
+        fontFamily: 'var(--fM)', fontSize: '.48rem', fontWeight: 700, letterSpacing: '.06em',
+        cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+        boxShadow: hover ? `0 4px 12px ${color}66` : 'none',
+        transition: 'all .18s', whiteSpace: 'nowrap', zIndex: 3,
+      }}>
+      <span>{icon}</span> {label}
+    </div>
+  );
+}
+
 // ─── Secondary Building Card ──────────────────────────────────────────────────
-function BuildingCard({ building, level, xp, onClick }) {
+function BuildingCard({ building, level, xp, onClick, modeLabel, modeIcon, modeColor, onModeClick }) {
   const [hover, setHover] = useState(false);
   const lvl = building.levels[Math.min(level - 1, 3)];
   const isLocked = (xp || 0) < building.unlockXp;
@@ -181,6 +203,10 @@ function BuildingCard({ building, level, xp, onClick }) {
         {lvl.label}
       </div>
       <Stars count={level} />
+      {/* Mode link badge */}
+      {modeLabel && onModeClick && !isLocked && (
+        <ModeLinkBadge label={modeLabel} icon={modeIcon} color={modeColor || '#2C4A6E'} onClick={onModeClick} />
+      )}
     </div>
   );
 }
@@ -203,17 +229,22 @@ function MainAcademyBuilding({ academyName, tier, level, elo }) {
       display: 'flex', flexDirection: 'column', alignItems: 'center',
       gap: 8, position: 'relative',
     }}>
-      {/* Academy name banner — floating above building */}
+      {/* Academy name banner — golden/marble style */}
       <div style={{
-        background: `linear-gradient(135deg, ${tier.color}22, ${tier.color}11)`,
-        border: `1.5px solid ${tier.color}55`,
-        borderRadius: 10, padding: '5px 16px',
-        fontFamily: 'var(--fH)', fontSize: '.75rem', letterSpacing: '.1em',
-        color: tier.color, textAlign: 'center',
-        boxShadow: `0 2px 12px ${tier.color}22`,
-        maxWidth: 200, wordBreak: 'break-word',
+        background: 'linear-gradient(135deg, #C6A15B 0%, #E8C97A 40%, #C6A15B 70%, #A07830 100%)',
+        border: '2px solid #C6A15Baa',
+        borderRadius: 12, padding: '6px 20px',
+        fontFamily: 'var(--fH)', fontSize: '.78rem', letterSpacing: '.14em',
+        color: '#3A2800',
+        textAlign: 'center',
+        boxShadow: '0 4px 16px rgba(198,161,91,.45), inset 0 1px 0 rgba(255,255,255,.5)',
+        maxWidth: 220, wordBreak: 'break-word',
+        textShadow: '0 1px 2px rgba(255,255,255,.4)',
+        position: 'relative',
       }}>
-        {academyName || "Académie Dialectix"}
+        {/* Marble shimmer line */}
+        <div style={{ position: 'absolute', top: 3, left: 10, right: 10, height: 1, background: 'rgba(255,255,255,.35)', borderRadius: 1, pointerEvents: 'none' }} />
+        {academyName || 'Académie Dialectix'}
       </div>
 
       {/* Stars above the building */}
@@ -730,8 +761,10 @@ export default function AcademyMap({ user, saveUser, showToast, setPage }) {
               position: 'relative', zIndex: 1,
               alignItems: 'end',
             }}>
-              {/* Left secondary building */}
-              <BuildingCard building={BUILDINGS[0]} level={level} xp={xp} onClick={() => {}} />
+              {/* Left — Bibliothèque → lien Mode Architecte */}
+              <BuildingCard building={BUILDINGS[0]} level={level} xp={xp} onClick={() => {}}
+                modeLabel="L'Architecte" modeIcon="🏛" modeColor="#2C4A6E"
+                onModeClick={() => setPage('architect')} />
 
               {/* Center — Main Academy Building */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
@@ -749,8 +782,10 @@ export default function AcademyMap({ user, saveUser, showToast, setPage }) {
                 </button>
               </div>
 
-              {/* Right secondary building */}
-              <BuildingCard building={BUILDINGS[1]} level={level} xp={xp} onClick={() => {}} />
+              {/* Right — Agora → lien Speed Run */}
+              <BuildingCard building={BUILDINGS[1]} level={level} xp={xp} onClick={() => {}}
+                modeLabel="Speed Run" modeIcon="⚡" modeColor="#8C3A30"
+                onModeClick={() => setPage('daily')} />
             </div>
 
             {/* Third building — centered below */}
