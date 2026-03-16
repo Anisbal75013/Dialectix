@@ -2916,26 +2916,12 @@ export default function DialectixV6(){
     <nav className="nav">
       <div className="nav-logo" onClick={closeMenu(()=>{setPage('home');setPhase('idle')})}>DIALECT<b>IX</b></div>
 
-      {/* ── Desktop nav links ── */}
+      {/* ── Desktop nav links — 4 entrées : hub via AcademyMap ── */}
       <div className={`nav-links${menuOpen?' nav-open':''}`}>
         <button className={`nl ${page==='home'?'on':''}`} onClick={closeMenu(()=>{setPage('home');setPhase('idle')})}>🏠 Accueil</button>
-        <button className={`nl ${page==='train'?'on':''}`} onClick={closeMenu(()=>{setPage('train');setPhase('idle')})}>🤖 Entraînement</button>
-        <button className={`nl ${page==='compete'?'on':''} hot`} onClick={closeMenu(()=>{setPage('compete');setPhase('idle')})}>⚔️ Compétitif</button>
-        <button className={`nl ${page==='arena'?'on':''}`} onClick={closeMenu(()=>setPage('arena'))} style={{color:'var(--P)',fontWeight:page==='arena'?700:400}}>🏟 Arena</button>
+        <button className={`nl ${['academy-map','daily','architect','library','oracle','labyrinthe','siege-agora','train','compete','arena','tournament'].includes(page)?'on':''}`} onClick={closeMenu(()=>setPage('academy-map'))} style={{color:'var(--G)',fontWeight:['academy-map','daily','architect','library','oracle','labyrinthe','siege-agora'].includes(page)?700:400}}>🏰 Mon Académie</button>
         <button className={`nl ${page==='rank'?'on':''}`} onClick={closeMenu(()=>setPage('rank'))}>🏆 Classement</button>
-        <button className={`nl ${page==='hall'?'on':''}`} onClick={closeMenu(()=>setPage('hall'))}>⭐ Hall of Fame</button>
-        <button className={`nl ${page==='academies'?'on':''}`} onClick={closeMenu(()=>setPage('academies'))}>🏛 Académies</button>
-        <button className={`nl ${page==='daily'?'on':''}`} onClick={closeMenu(()=>setPage('daily'))} style={{color:'var(--O)'}}>🔍 Défi</button>
-        <button className={`nl ${page==='architect'?'on':''}`} onClick={closeMenu(()=>setPage('architect'))} style={{color:'var(--A)',fontWeight:page==='architect'?700:400}}>🏛 Architecte</button>
-        <button className={`nl ${page==='library'?'on':''}`} onClick={closeMenu(()=>setPage('library'))} style={{color:'var(--A)',fontWeight:page==='library'?700:400}}>📚 Bibliothèque</button>
-        <button className={`nl ${page==='oracle'?'on':''}`} onClick={closeMenu(()=>setPage('oracle'))} style={{color:'var(--G)',fontWeight:page==='oracle'?700:400}}>🔮 Oracle</button>
-        <button className={`nl ${page==='labyrinthe'?'on':''}`} onClick={closeMenu(()=>setPage('labyrinthe'))} style={{color:'var(--Y)',fontWeight:page==='labyrinthe'?700:400}}>🗺 Labyrinthe</button>
-        <button className={`nl ${page==='siege-agora'?'on':''}`} onClick={closeMenu(()=>setPage('siege-agora'))} style={{color:'var(--B)',fontWeight:page==='siege-agora'?700:400}}>⚔️ Siège Agora</button>
-        <button className={`nl ${page==='academy-map'?'on':''}`} onClick={closeMenu(()=>setPage('academy-map'))} style={{color:'var(--G)',fontWeight:page==='academy-map'?700:400}}>🏰 Mon Académie</button>
-        <button className={`nl ${page==='tournament'?'on':''}`} onClick={closeMenu(()=>setPage('tournament'))} style={{color:'var(--Y)',fontWeight:page==='tournament'?700:400}}>🏆 Tournoi Alpha</button>
-        <button className={`nl ${page==='actu'?'on':''}`} onClick={closeMenu(()=>setPage('actu'))} style={{color:'var(--G)',fontWeight:page==='actu'?700:400}}>📰 Actu</button>
-        <button className={`nl ${page==='battles'?'on':''}`} onClick={closeMenu(()=>setPage('battles'))} style={{color:'var(--O)',fontWeight:page==='battles'?700:400}}>👁 Battles</button>
-        <button className={`nl ${page==='guides'?'on':''}`} onClick={closeMenu(()=>setPage('guides'))} style={{color:'var(--B)',fontWeight:page==='guides'?700:400}}>📘 Guides</button>
+        <button className={`nl ${page==='profile'?'on':''}`} onClick={closeMenu(()=>setPage('profile'))}>👤 Mon Profil</button>
         {isAdmin()&&<button className={`nl ${page==='admin-dashboard'?'on':''}`} onClick={closeMenu(()=>setPage('admin-dashboard'))} style={{color:'var(--O)',fontWeight:page==='admin-dashboard'?700:400}}>⚙️ Dashboard</button>}
       </div>
 

@@ -44,6 +44,20 @@ export const SEED_DUELS = [
   { argument: "Mon adversaire dit vouloir protéger l'environnement, mais il a pris l'avion vingt fois l'année dernière.", fallacyId: 'ad_hominem', explanation: "Le comportement personnel ne réfute pas les arguments environnementaux avancés." },
 ];
 
+// ─── Citations de fin de partie ───────────────────────────────────────────────
+const PHILOSOPHER_QUOTES = [
+  { quote: "La qualité d'un argument se mesure à la rigueur de sa logique, non à la véhémence de sa défense.", author: "Marc Aurèle" },
+  { quote: "Ce n'est pas l'erreur qui est honteuse, c'est de ne pas la reconnaître.", author: "Sénèque" },
+  { quote: "Je ne sais qu'une chose, c'est que je ne sais rien — mais je chercherai toujours.", author: "Socrate" },
+  { quote: "Agis seulement d'après la maxime dont tu peux vouloir qu'elle devienne une loi universelle.", author: "Emmanuel Kant" },
+  { quote: "L'homme qui recourt au sophisme a déjà perdu la moitié du débat.", author: "Aristote" },
+  { quote: "La vérité n'a pas besoin de l'applaudissement de la foule pour exister.", author: "Épictète" },
+  { quote: "On ne voit bien qu'avec le cœur, l'essentiel est invisible pour les yeux — mais la raison guide le cœur.", author: "Antoine de Saint-Exupéry" },
+];
+function randomQuote() {
+  return PHILOSOPHER_QUOTES[Math.floor(Math.random() * PHILOSOPHER_QUOTES.length)];
+}
+
 // ─── LocalStorage helpers ─────────────────────────────────────────────────────
 const SR_KEY = 'dix_speedrun_v1';
 const CLASSIC_KEY = 'dix_sophism_duel_v1';
@@ -176,6 +190,9 @@ export default function SophismDuel({ user, saveUser, showToast }) {
 
   const timerRef = useRef(null);
   const srPhaseRef = useRef('running'); // track SR running state in ref for timer cb
+  // Always tracks the latest user prop — fixes stale-closure in async done useEffect
+  const userRef = useRef(user);
+  useEffect(() => { userRef.current = user; }, [user]);
 
   // Load world record on mount
   useEffect(() => { getWorldRecord().then(setWorldRecord); }, []);
@@ -318,13 +335,15 @@ export default function SophismDuel({ user, saveUser, showToast }) {
     saveBestScore(correct);
 
     // ELO + Supabase async (non-blocking)
+    // Use userRef.current to avoid stale-closure on the user prop
     let eloDelta = 0;
     (async () => {
-      eloDelta = await maybeAddElo(user, saveUser, correct, total);
-      if (user) {
-        // Use direct object form — App.jsx saveUser doesn't support functional updates
-        saveUser({ ...user, xp: (user?.xp || 0) + xpGained, elo: (user?.elo || 1000) + eloDelta });
-        await upsertDuelStats(user?.id, correct, total, correct, byType);
+      const u = userRef.current;
+      eloDelta = await maybeAddElo(u, saveUser, correct, total);
+      if (u) {
+        // Direct object form — App.jsx saveUser doesn't support functional updates
+        saveUser({ ...u, xp: (u?.xp || 0) + xpGained, elo: (u?.elo || 1000) + eloDelta });
+        await upsertDuelStats(u?.id, correct, total, correct, byType);
       }
       const newWorld = await getWorldRecord();
       setWorldRecord(newWorld);
@@ -435,28 +454,28 @@ export default function SophismDuel({ user, saveUser, showToast }) {
           </div>
           <TimerBar seconds={classicTime} total={DURATION} />
 
-          <div style={{ background: 'linear-gradient(160deg,rgba(140,58,48,.04),rgba(44,74,110,.04))', border: '1px solid var(--bd)', borderLeft: '4px solid var(--B)', borderRadius: 10, padding: '20px 22px', margin: '18px 0 16px', boxShadow: 'var(--sh)' }}>
-            <div style={{ fontFamily: 'var(--fM)', fontSize: '.56rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 8 }}>🤖 Argument à analyser</div>
-            <p style={{ fontFamily: 'var(--fC)', fontSize: '1rem', color: 'var(--txt)', lineHeight: 1.8, fontStyle: 'italic', margin: 0 }}>« {classicDuel.argument} »</p>
+          <div style={{ background: 'linear-gradient(160deg,rgba(140,58,48,.04),rgba(44,74,110,.04))', border: '1px solid var(--bd)', borderLeft: '4px solid var(--B)', borderRadius: 12, padding: '24px 26px', margin: '18px 0 16px', boxShadow: 'var(--sh)' }}>
+            <div style={{ fontFamily: 'var(--fM)', fontSize: '.58rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 10 }}>🤖 Argument à analyser</div>
+            <p style={{ fontFamily: 'var(--fC)', fontSize: '1.13rem', color: 'var(--txt)', lineHeight: 1.7, fontStyle: 'italic', margin: 0 }}>« {classicDuel.argument} »</p>
           </div>
 
-          <div style={{ fontFamily: 'var(--fB)', fontSize: '.72rem', fontWeight: 600, color: 'var(--dim)', marginBottom: 10 }}>🔎 Quel sophisme est présent ?</div>
+          <div style={{ fontFamily: 'var(--fB)', fontSize: '.75rem', fontWeight: 600, color: 'var(--dim)', marginBottom: 10 }}>🔎 Quel sophisme est présent ?</div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 18 }}>
             {choices.map(f => (
               <button key={f.id} onClick={() => setClassicSel(f.id)} style={{
-                display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 16px',
+                display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 18px',
                 border: `2px solid ${classicSel === f.id ? 'var(--A)' : 'var(--bd)'}`,
-                borderRadius: 9, cursor: 'pointer', textAlign: 'left',
+                borderRadius: 10, cursor: 'pointer', textAlign: 'left',
                 background: classicSel === f.id ? 'rgba(44,74,110,.07)' : '#FDFAF4',
                 transition: 'all .12s', boxShadow: classicSel === f.id ? 'var(--glA)' : 'var(--sh)',
               }}>
-                <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${classicSel === f.id ? 'var(--A)' : 'var(--bd2)'}`, background: classicSel === f.id ? 'var(--A)' : 'transparent', flexShrink: 0, marginTop: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 20, height: 20, borderRadius: '50%', border: `2px solid ${classicSel === f.id ? 'var(--A)' : 'var(--bd2)'}`, background: classicSel === f.id ? 'var(--A)' : 'transparent', flexShrink: 0, marginTop: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {classicSel === f.id && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#fff' }} />}
                 </div>
                 <div>
-                  <div style={{ fontFamily: 'var(--fB)', fontSize: '.73rem', fontWeight: 600, color: classicSel === f.id ? 'var(--A)' : 'var(--txt)', marginBottom: 2 }}>{f.label}</div>
-                  <div style={{ fontFamily: 'var(--fM)', fontSize: '.56rem', color: 'var(--muted)', lineHeight: 1.4 }}>{f.desc}</div>
+                  <div style={{ fontFamily: 'var(--fB)', fontSize: '.82rem', fontWeight: 600, color: classicSel === f.id ? 'var(--A)' : 'var(--txt)', marginBottom: 3 }}>{f.label}</div>
+                  <div style={{ fontFamily: 'var(--fM)', fontSize: '.62rem', color: 'var(--muted)', lineHeight: 1.6 }}>{f.desc}</div>
                 </div>
               </button>
             ))}
@@ -497,9 +516,9 @@ export default function SophismDuel({ user, saveUser, showToast }) {
             </div>
           )}
 
-          <div style={{ background: 'rgba(44,74,110,.04)', border: '1px solid rgba(44,74,110,.15)', borderRadius: 9, padding: '14px 18px', marginBottom: 20 }}>
-            <div style={{ fontFamily: 'var(--fM)', fontSize: '.56rem', color: 'var(--A)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 5 }}>📖 Explication</div>
-            <p style={{ fontFamily: 'var(--fC)', fontSize: '.9rem', color: 'var(--dim)', lineHeight: 1.75, fontStyle: 'italic', margin: 0 }}>{classicDuel.explanation}</p>
+          <div style={{ background: 'rgba(44,74,110,.04)', border: '1px solid rgba(44,74,110,.15)', borderRadius: 10, padding: '18px 22px', marginBottom: 20 }}>
+            <div style={{ fontFamily: 'var(--fM)', fontSize: '.58rem', color: 'var(--A)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>📖 Explication</div>
+            <p style={{ fontFamily: 'var(--fC)', fontSize: '1rem', color: 'var(--dim)', lineHeight: 1.7, fontStyle: 'italic', margin: 0 }}>{classicDuel.explanation}</p>
           </div>
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -560,32 +579,32 @@ export default function SophismDuel({ user, saveUser, showToast }) {
           )}
 
           {/* Argument */}
-          <div style={{ background: 'linear-gradient(160deg,rgba(140,58,48,.04),rgba(44,74,110,.04))', border: '1px solid var(--bd)', borderLeft: `4px solid ${flash === 'correct' ? 'var(--G)' : flash === 'wrong' ? 'var(--B)' : 'var(--A)'}`, borderRadius: 10, padding: '18px 20px', margin: '16px 0 14px', boxShadow: 'var(--sh)', transition: 'border-color .2s' }}>
-            <div style={{ fontFamily: 'var(--fM)', fontSize: '.54rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 8 }}>
+          <div style={{ background: 'linear-gradient(160deg,rgba(140,58,48,.04),rgba(44,74,110,.04))', border: '1px solid var(--bd)', borderLeft: `4px solid ${flash === 'correct' ? 'var(--G)' : flash === 'wrong' ? 'var(--B)' : 'var(--A)'}`, borderRadius: 12, padding: '22px 24px', margin: '14px 0 12px', boxShadow: 'var(--sh)', transition: 'border-color .2s' }}>
+            <div style={{ fontFamily: 'var(--fM)', fontSize: '.56rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 10 }}>
               🤖 Argument #{srIdx + 1}
             </div>
-            <p style={{ fontFamily: 'var(--fC)', fontSize: '.95rem', color: 'var(--txt)', lineHeight: 1.75, fontStyle: 'italic', margin: 0 }}>
+            <p style={{ fontFamily: 'var(--fC)', fontSize: '1.1rem', color: 'var(--txt)', lineHeight: 1.7, fontStyle: 'italic', margin: 0 }}>
               « {currentQ.argument} »
             </p>
           </div>
 
-          <div style={{ fontFamily: 'var(--fB)', fontSize: '.7rem', fontWeight: 600, color: 'var(--dim)', marginBottom: 8 }}>⚡ Cliquez immédiatement — pas de bouton valider</div>
+          <div style={{ fontFamily: 'var(--fB)', fontSize: '.72rem', fontWeight: 600, color: 'var(--dim)', marginBottom: 8 }}>⚡ Cliquez immédiatement — pas de bouton valider</div>
 
           {/* Choices — clicking IS the answer */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {choices.map(f => (
               <button key={f.id} onClick={() => handleSrAnswer(f.id)}
                 disabled={!!flash}
                 style={{
-                  padding: '12px 14px', border: '1.5px solid var(--bd)', borderRadius: 10,
+                  padding: '14px 16px', border: '1.5px solid var(--bd)', borderRadius: 10,
                   cursor: flash ? 'default' : 'pointer', textAlign: 'left',
                   background: '#FDFAF4', transition: 'all .12s',
                   opacity: flash ? 0.6 : 1,
                 }}
                 onMouseEnter={e => { if (!flash) { e.currentTarget.style.borderColor = 'var(--A)'; e.currentTarget.style.background = 'rgba(44,74,110,.05)'; } }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--bd)'; e.currentTarget.style.background = '#FDFAF4'; }}>
-                <div style={{ fontFamily: 'var(--fB)', fontSize: '.68rem', fontWeight: 700, color: 'var(--txt)', marginBottom: 2 }}>{f.label}</div>
-                <div style={{ fontFamily: 'var(--fM)', fontSize: '.50rem', color: 'var(--muted)', lineHeight: 1.4 }}>{f.desc}</div>
+                <div style={{ fontFamily: 'var(--fB)', fontSize: '.78rem', fontWeight: 700, color: 'var(--txt)', marginBottom: 4 }}>{f.label}</div>
+                <div style={{ fontFamily: 'var(--fM)', fontSize: '.58rem', color: 'var(--muted)', lineHeight: 1.6 }}>{f.desc}</div>
               </button>
             ))}
           </div>
@@ -601,6 +620,8 @@ export default function SophismDuel({ user, saveUser, showToast }) {
     const s = srSummary;
     const personalBest = getBestScore();
     const isRecord = s && s.correct >= personalBest;
+    // Pick a quote once (stable per render since phase=done doesn't re-trigger)
+    const quote = srSummary ? randomQuote() : null;
 
     return (
       <div className="page">
@@ -679,6 +700,16 @@ export default function SophismDuel({ user, saveUser, showToast }) {
                 </div>
               )}
             </>
+          )}
+
+          {/* Citation philosophique */}
+          {quote && (
+            <div style={{ borderTop: '1px solid var(--bd)', paddingTop: 18, marginBottom: 18, textAlign: 'center' }}>
+              <p style={{ fontFamily: 'var(--fC)', fontSize: '.88rem', fontStyle: 'italic', color: 'var(--dim)', lineHeight: 1.65, margin: '0 0 6px' }}>
+                « {quote.quote} »
+              </p>
+              <div style={{ fontFamily: 'var(--fM)', fontSize: '.58rem', color: 'var(--muted)', letterSpacing: '.06em' }}>— {quote.author}</div>
+            </div>
           )}
 
           <div style={{ display: 'flex', gap: 10 }}>
