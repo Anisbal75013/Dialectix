@@ -93,6 +93,19 @@ const BUILDINGS = [
     ],
     unlockXp: 200,
   },
+  {
+    id: 'stadium',
+    name: 'Stade',
+    desc: "L'arène des tournois — où les champions s'affrontent en bracket.",
+    icon: '🏆',
+    levels: [
+      { label: 'Terrain de Jeux',        emoji: '⛳', color: '#8A7A60', glow: 'rgba(138,122,96,.25)' },
+      { label: 'Stade Régional',         emoji: '🏟', color: '#3A6E52', glow: 'rgba(58,110,82,.3)'  },
+      { label: 'Stade National',         emoji: '🏆', color: '#C6A15B', glow: 'rgba(198,161,91,.4)' },
+      { label: 'Colisée des Champions',  emoji: '👑', color: '#C6A15B', glow: 'rgba(198,161,91,.5)' },
+    ],
+    unlockXp: 100,
+  },
 ];
 
 // ─── Stars component ──────────────────────────────────────────────────────────
@@ -788,12 +801,32 @@ export default function AcademyMap({ user, saveUser, showToast, setPage }) {
                 onModeClick={() => setPage('daily')} />
             </div>
 
-            {/* Third building — centered below → Hall des Débats → Siège de l'Agora */}
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 18, position: 'relative', zIndex: 1 }}>
-              <div style={{ width: '34%', minWidth: 130, maxWidth: 180 }}>
-                <BuildingCard building={BUILDINGS[2]} level={level} xp={xp} onClick={() => {}}
-                  modeLabel="Siège Agora" modeIcon="⚔️" modeColor="#8C3A30"
-                  onModeClick={() => setPage('siege-agora')} />
+            {/* Bottom row — Hall des Débats + Stade (côte à côte) */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 18, position: 'relative', zIndex: 1 }}>
+              <BuildingCard building={BUILDINGS[2]} level={level} xp={xp} onClick={() => {}}
+                modeLabel="Siège Agora" modeIcon="⚔️" modeColor="#8C3A30"
+                onModeClick={() => setPage('siege-agora')} />
+              <div style={{ position: 'relative' }}>
+                <BuildingCard building={BUILDINGS[3]} level={level} xp={xp} onClick={() => {}}
+                  modeLabel="Tournoi" modeIcon="🏆" modeColor="#C6A15B"
+                  onModeClick={() => setPage('tournament')} />
+                {/* Badge LIVE si un tournoi est en cours */}
+                {(()=>{
+                  try {
+                    const t = JSON.parse(localStorage.getItem('dx_tournament_alpha') || 'null');
+                    if (t && t.status === 'active') return (
+                      <div style={{
+                        position: 'absolute', top: 4, right: 4, zIndex: 10,
+                        background: '#E53935', color: '#fff', borderRadius: 20,
+                        padding: '2px 8px', fontFamily: 'var(--fM)', fontSize: '.44rem',
+                        fontWeight: 700, letterSpacing: '.08em',
+                        animation: 'blink .9s infinite',
+                        boxShadow: '0 2px 8px rgba(229,57,53,.5)',
+                      }}>● LIVE</div>
+                    );
+                  } catch { return null; }
+                  return null;
+                })()}
               </div>
             </div>
 

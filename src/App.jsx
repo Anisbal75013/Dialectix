@@ -2919,7 +2919,10 @@ export default function DialectixV6(){
       {/* ── Desktop nav links — 4 entrées : hub via AcademyMap ── */}
       <div className={`nav-links${menuOpen?' nav-open':''}`}>
         <button className={`nl ${page==='home'?'on':''}`} onClick={closeMenu(()=>{setPage('home');setPhase('idle')})}>🏠 Accueil</button>
-        <button className={`nl ${['academy-map','daily','architect','library','oracle','labyrinthe','siege-agora','train','compete','arena','tournament'].includes(page)?'on':''}`} onClick={closeMenu(()=>setPage('academy-map'))} style={{color:'var(--G)',fontWeight:['academy-map','daily','architect','library','oracle','labyrinthe','siege-agora'].includes(page)?700:400}}>🏰 Mon Académie</button>
+        <button className={`nl ${['academy-map','daily','architect','library','oracle','labyrinthe','siege-agora','train','compete','arena','tournament'].includes(page)?'on':''}`} onClick={closeMenu(()=>setPage('academy-map'))} style={{color:'var(--G)',fontWeight:['academy-map','daily','architect','library','oracle','labyrinthe','siege-agora','tournament'].includes(page)?700:400}}>
+          🏰 Mon Académie
+          {(()=>{try{const t=JSON.parse(localStorage.getItem('dx_tournament_alpha')||'null');if(t&&t.status==='active')return<span style={{marginLeft:5,background:'#E53935',color:'#fff',borderRadius:20,padding:'1px 6px',fontSize:'.44rem',fontWeight:700,verticalAlign:'middle',animation:'blink .9s infinite'}}>LIVE</span>;}catch{}return null;})()}
+        </button>
         <button className={`nl ${page==='rank'?'on':''}`} onClick={closeMenu(()=>setPage('rank'))}>🏆 Classement</button>
         <button className={`nl ${page==='profile'?'on':''}`} onClick={closeMenu(()=>setPage('profile'))}>👤 Mon Profil</button>
         {isAdmin()&&<button className={`nl ${page==='admin-dashboard'?'on':''}`} onClick={closeMenu(()=>setPage('admin-dashboard'))} style={{color:'var(--O)',fontWeight:page==='admin-dashboard'?700:400}}>⚙️ Dashboard</button>}
@@ -3837,12 +3840,13 @@ export default function DialectixV6(){
           <>
             <TournamentSystem
               user={user}
+              saveUser={saveUser}
               setPage={setPage}
               showToast={showToast}
               onShowRules={()=>setTournamentRulesOpen(true)}
-              onChallenge={p=>{
+              onChallenge={(p, mode)=>{
                 if(!user){showToast('Connectez-vous pour challenger un joueur.','error');return;}
-                const topic=`Débat de tournoi contre ${p.name}`;
+                showToast(`${mode?.icon||'⚔️'} Défi lancé — Mode : ${mode?.label||'Libre'}`, 'info');
                 setPage('train');
                 setPhase('idle');
               }}
