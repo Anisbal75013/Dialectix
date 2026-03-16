@@ -5,6 +5,10 @@ import AcademyMap    from './AcademyMap.jsx';
 import SophismDuel, { SEED_DUELS } from './SophismDuel.jsx';
 import CompetitiveLobby from './CompetitiveLobby.jsx';
 import ArchitectMode from './ArchitectMode.jsx';
+import FallacyLibrary from './FallacyLibrary.jsx';
+import OracleMode from './OracleMode.jsx';
+import LabyrintheMode from './LabyrintheMode.jsx';
+import SiegeAgora from './SiegeAgora.jsx';
 
 /* ─── BACKEND URL ─────────────────────────────────────────────────────────────
  * Set VITE_BACKEND_URL in .env.development / .env.production.
@@ -2516,6 +2520,11 @@ export default function DialectixV6(){
     // Level is derived from XP: every 100 XP = 1 level (minimum level 1).
     const computedLevel=Math.max(1,Math.floor((u.xp||0)/100)+1);
     const withTier={...u, tier:getTier(u.elo||0).label, mvp_count:u.mvp_count||0, level:computedLevel};
+    // ── Level-up notification ──────────────────────────────────────────────
+    const prevLevel=user?.level||1;
+    if(computedLevel>prevLevel){
+      setTimeout(()=>setToast({msg:`🎉 Niveau ${computedLevel} débloqué !`, type:'achievement'}),350);
+    }
     setUser(withTier);
     if(typeof localStorage!=='undefined')localStorage.setItem('dix_user_v6',JSON.stringify(withTier));
     sbUpsertProfile(withTier); // sync Supabase (fallback : localStorage déjà sauvé)
@@ -2918,6 +2927,10 @@ export default function DialectixV6(){
         <button className={`nl ${page==='academies'?'on':''}`} onClick={closeMenu(()=>setPage('academies'))}>🏛 Académies</button>
         <button className={`nl ${page==='daily'?'on':''}`} onClick={closeMenu(()=>setPage('daily'))} style={{color:'var(--O)'}}>🔍 Défi</button>
         <button className={`nl ${page==='architect'?'on':''}`} onClick={closeMenu(()=>setPage('architect'))} style={{color:'var(--A)',fontWeight:page==='architect'?700:400}}>🏛 Architecte</button>
+        <button className={`nl ${page==='library'?'on':''}`} onClick={closeMenu(()=>setPage('library'))} style={{color:'var(--A)',fontWeight:page==='library'?700:400}}>📚 Bibliothèque</button>
+        <button className={`nl ${page==='oracle'?'on':''}`} onClick={closeMenu(()=>setPage('oracle'))} style={{color:'var(--G)',fontWeight:page==='oracle'?700:400}}>🔮 Oracle</button>
+        <button className={`nl ${page==='labyrinthe'?'on':''}`} onClick={closeMenu(()=>setPage('labyrinthe'))} style={{color:'var(--Y)',fontWeight:page==='labyrinthe'?700:400}}>🗺 Labyrinthe</button>
+        <button className={`nl ${page==='siege-agora'?'on':''}`} onClick={closeMenu(()=>setPage('siege-agora'))} style={{color:'var(--B)',fontWeight:page==='siege-agora'?700:400}}>⚔️ Siège Agora</button>
         <button className={`nl ${page==='academy-map'?'on':''}`} onClick={closeMenu(()=>setPage('academy-map'))} style={{color:'var(--G)',fontWeight:page==='academy-map'?700:400}}>🏰 Mon Académie</button>
         <button className={`nl ${page==='tournament'?'on':''}`} onClick={closeMenu(()=>setPage('tournament'))} style={{color:'var(--Y)',fontWeight:page==='tournament'?700:400}}>🏆 Tournoi Alpha</button>
         <button className={`nl ${page==='actu'?'on':''}`} onClick={closeMenu(()=>setPage('actu'))} style={{color:'var(--G)',fontWeight:page==='actu'?700:400}}>📰 Actu</button>
@@ -2928,7 +2941,12 @@ export default function DialectixV6(){
 
       {/* ── Right section : ELO + badge + avatar / connexion ── */}
       <div className="nav-r">
-        {user&&<div style={{fontFamily:'var(--fH)',fontSize:'.95rem',color:'var(--Y)'}}>{user.elo}</div>}
+        {user&&(
+          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',lineHeight:1.15,gap:0}}>
+            <div style={{fontFamily:'var(--fH)',fontSize:'.9rem',color:'var(--Y)'}}>{user.elo} <span style={{fontSize:'.55rem',opacity:.7}}>ELO</span></div>
+            <div style={{fontFamily:'var(--fM)',fontSize:'.48rem',color:'var(--muted)'}}>Niv.{user.level||1} · {user.xp||0} XP</div>
+          </div>
+        )}
         {user&&<BadgePill elo={user.elo}/>}
         {user&&user.streak>2&&<div style={{fontFamily:'var(--fM)',fontSize:'.6rem',color:'var(--O)',background:'rgba(160,90,44,.1)',border:'1px solid rgba(160,90,44,.25)',borderRadius:20,padding:'3px 10px'}}>🔥 {user.streak}</div>}
         {user?(
@@ -3807,6 +3825,18 @@ export default function DialectixV6(){
         )}
         {showNav&&page==='architect'&&(
           <ArchitectMode user={user} saveUser={saveUser} showToast={showToast}/>
+        )}
+        {showNav&&page==='library'&&(
+          <FallacyLibrary user={user} saveUser={saveUser} showToast={showToast}/>
+        )}
+        {showNav&&page==='oracle'&&(
+          <OracleMode user={user} saveUser={saveUser} showToast={showToast}/>
+        )}
+        {showNav&&page==='labyrinthe'&&(
+          <LabyrintheMode user={user} saveUser={saveUser} showToast={showToast}/>
+        )}
+        {showNav&&page==='siege-agora'&&(
+          <SiegeAgora user={user} saveUser={saveUser} showToast={showToast}/>
         )}
         {/* ── ARENA — modular, does not affect existing debate logic ── */}
         {showNav&&page==='arena'&&<ArenaPage user={user} saveUser={saveUser} showToast={showToast} setPage={setPage} leaderboard={leaderboard} supabase={SB}/>}

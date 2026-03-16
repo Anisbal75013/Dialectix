@@ -761,10 +761,10 @@ export default function AcademyMap({ user, saveUser, showToast, setPage }) {
               position: 'relative', zIndex: 1,
               alignItems: 'end',
             }}>
-              {/* Left — Bibliothèque → lien Mode Architecte */}
+              {/* Left — Bibliothèque → FallacyLibrary */}
               <BuildingCard building={BUILDINGS[0]} level={level} xp={xp} onClick={() => {}}
-                modeLabel="L'Architecte" modeIcon="🏛" modeColor="#2C4A6E"
-                onModeClick={() => setPage('architect')} />
+                modeLabel="Bibliothèque" modeIcon="📚" modeColor="#2C4A6E"
+                onModeClick={() => setPage('library')} />
 
               {/* Center — Main Academy Building */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
@@ -788,10 +788,12 @@ export default function AcademyMap({ user, saveUser, showToast, setPage }) {
                 onModeClick={() => setPage('daily')} />
             </div>
 
-            {/* Third building — centered below */}
+            {/* Third building — centered below → Hall des Débats → Siège de l'Agora */}
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: 18, position: 'relative', zIndex: 1 }}>
               <div style={{ width: '34%', minWidth: 130, maxWidth: 180 }}>
-                <BuildingCard building={BUILDINGS[2]} level={level} xp={xp} onClick={() => {}} />
+                <BuildingCard building={BUILDINGS[2]} level={level} xp={xp} onClick={() => {}}
+                  modeLabel="Siège Agora" modeIcon="⚔️" modeColor="#8C3A30"
+                  onModeClick={() => setPage('siege-agora')} />
               </div>
             </div>
 
