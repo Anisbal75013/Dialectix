@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from '@supabase/supabase-js';
 import { callClaude } from './claude.js';
+import AcademyMap    from './AcademyMap.jsx';
+import SophismDuel   from './SophismDuel.jsx';
+import CompetitiveLobby from './CompetitiveLobby.jsx';
 
 /* ─── BACKEND URL ─────────────────────────────────────────────────────────────
  * Set VITE_BACKEND_URL in .env.development / .env.production.
@@ -76,11 +79,22 @@ const BADGES=[
 const DEBATE_PHASES=['Exposé initial','Arguments','Réfutations','Conclusion'];
 
 const FORMATS=[
-  {id:'blitz',    label:'Blitz',    min:5,  desc:'5 min · ultra-rapide'},
-  {id:'rapid',    label:'Rapid',    min:10, desc:'10 min'},
-  {id:'standard', label:'Standard', min:20, desc:'20 min · recommandé'},
-  {id:'deep',     label:'Deep',     min:45, desc:'45 min · approfondi'},
+  {id:'blitz',    label:'Blitz',    min:5,  desc:'5 min · ultra-rapide',
+    readSec:30, writeSec:45,
+    tooltip:'⚡ Blitz — Preuve par 3 · 30s lecture / 45s rédaction · Ultra-rapide'},
+  {id:'rapid',    label:'Rapid',    min:10, desc:'10 min',
+    readSec:60, writeSec:120,
+    tooltip:'🏃 Rapid — 1 min lecture / 2 min rédaction'},
+  {id:'standard', label:'Standard', min:20, desc:'20 min · recommandé',
+    readSec:180, writeSec:300,
+    tooltip:'📚 Standard — 3 min lecture / 5 min rédaction · Recommandé'},
+  {id:'deep',     label:'Deep',     min:45, desc:'45 min · approfondi',
+    readSec:420, writeSec:600,
+    tooltip:'🔬 Deep — 7 min lecture / 10 min rédaction · Analyse approfondie'},
 ];
+
+// ── Limite d'entraînement quotidien pour les comptes gratuits ──────────────────
+const TRAINING_FREE_DAILY_LIMIT = 5;
 
 /* ── BÊTA : 3 bots uniquement ──────────────────────────────────────────────
  * Débutant / Intermédiaire / Elite — couvre l'ensemble du spectre ELO bêta.
@@ -130,6 +144,28 @@ const ACHIEVEMENTS_DEF=[
   {id:'rank_up_1',     icon:'🗣',name:'Rhéteur Certifié',    desc:'Atteignez le rang Rhéteur (1050)',        check:u=>u.elo>=1050},
   {id:'rank_up_2',     icon:'🦉',name:'Philosophe Certifié', desc:'Atteignez le rang Philosophe (1500)',     check:u=>u.elo>=1500},
 ];
+
+/* ── CITATIONS DE SAGESSE (pop-up après victoire / défaite) ───────────────── */
+const WISDOM_QUOTES={
+  win:[
+    {quote:"La victoire appartient au plus persévérant.",author:"Napoléon Bonaparte"},
+    {quote:"Il n'y a pas de vent favorable pour celui qui ne sait pas où il va.",author:"Sénèque"},
+    {quote:"Le courage, c'est de chercher la vérité et de la dire.",author:"Jean Jaurès"},
+    {quote:"L'art de la rhétorique consiste à parler de façon à convaincre.",author:"Aristote"},
+    {quote:"La parole est moitié à celui qui parle, moitié à celui qui écoute.",author:"Montaigne"},
+    {quote:"Qui n'a pas l'esprit de son âge, de son âge a tout le malheur.",author:"Voltaire"},
+    {quote:"Donnez-moi un point d'appui et un levier et je soulèverai le monde.",author:"Archimède"},
+  ],
+  loss:[
+    {quote:"L'échec est le fondement de la réussite.",author:"Lao-Tseu"},
+    {quote:"Un homme sage parle parce qu'il a quelque chose à dire ; un fou parce qu'il doit dire quelque chose.",author:"Platon"},
+    {quote:"Connais-toi toi-même.",author:"Socrate"},
+    {quote:"Celui qui apprend mais ne pense pas est perdu. Celui qui pense mais n'apprend pas est en grand danger.",author:"Confucius"},
+    {quote:"On n'apprend pas de ses succès, on apprend de ses erreurs.",author:"Albert Einstein"},
+    {quote:"La patience est la mère de toutes les vertus.",author:"Cicéron"},
+    {quote:"Nul ne peut atteindre l'aube sans passer par le chemin de la nuit.",author:"Khalil Gibran"},
+  ],
+};
 
 /* ── UTILS ─────────────────────────────────────────────────── */
 const initS  =()=>({relevance:5,logic:5,evidence:5,rebuttal:5,clarity:5});
@@ -2375,6 +2411,8 @@ export default function DialectixV6(){
   const [selFormat,setSelFormat]=useState('standard');
   const [checkmateEntry,setCheckmateEntry]=useState(null); // Module 3 — Checkmate
   const [showProfileQ,setShowProfileQ]=useState(false);   // Profile questionnaire gate
+  const [wisdomQuote,setWisdomQuote]=useState(null);       // Feature 7 — Citation de sagesse
+  const [tournamentRulesOpen,setTournamentRulesOpen]=useState(false); // Feature 6 — Règles tournoi
 
   // ── MATCHMAKING
   const [mmPhase,setMMPhase]=useState('idle'); // idle|searching|timedout
@@ -2585,6 +2623,22 @@ export default function DialectixV6(){
       showToast(`Limite quotidienne atteinte (${DAILY_DEBATE_LIMIT} débats). Revenez demain.`,'error');
       return;
     }
+    // ── Feature 3 : Limite d'entraînement quotidienne pour comptes gratuits ──
+    // Les comptes gratuits (non-premium) sont limités à 5 entraînements/jour.
+    // Un compte est "premium" si user.isPremium === true.
+    if(!user?.isPremium){
+      const trainKey='dix_train_daily_v1';
+      const todayStr=new Date().toISOString().slice(0,10);
+      try{
+        const raw=JSON.parse(localStorage.getItem(trainKey)||'{}');
+        const count=raw.date===todayStr?raw.count:0;
+        if(count>=TRAINING_FREE_DAILY_LIMIT){
+          showToast(`Limite d'entraînement atteinte (${TRAINING_FREE_DAILY_LIMIT}/jour). Revenez demain ou débattez en mode Compétitif !`,'error');
+          return;
+        }
+        localStorage.setItem(trainKey,JSON.stringify({date:todayStr,count:count+1}));
+      }catch{}
+    }
     // ── Beta bot battle limit (max 5 per user) ────────────────────────────
     if(isBetaBotBattle(bot) && hasReachedBotLimit(user?.id)){
       const rem=0;
@@ -2630,6 +2684,16 @@ export default function DialectixV6(){
         quality:'Moyen',mvp_argument:'—',percentile:50};
     }
     setReportResult(report);setGenRep(false);
+
+    // ── Feature 7 — Citation de sagesse (pop-up après victoire / défaite) ────
+    // Affiché 2 secondes après le rapport pour laisser l'utilisateur lire.
+    {
+      const tA=gScore(scoresA),tB=gScore(scoresB);
+      const won=tA>tB+0.3;
+      const pool=won?WISDOM_QUOTES.win:WISDOM_QUOTES.loss;
+      const q=pool[Math.floor(Math.random()*pool.length)];
+      setTimeout(()=>setWisdomQuote({...q,win:won}),2000);
+    }
 
     // ── Save public battle for spectator mode (BattlesPage) ──────────────────
     const tA=gScore(scoresA),tB=gScore(scoresB);
@@ -2798,7 +2862,8 @@ export default function DialectixV6(){
         <button className={`nl ${page==='rank'?'on':''}`} onClick={closeMenu(()=>setPage('rank'))}>🏆 Classement</button>
         <button className={`nl ${page==='hall'?'on':''}`} onClick={closeMenu(()=>setPage('hall'))}>⭐ Hall of Fame</button>
         <button className={`nl ${page==='academies'?'on':''}`} onClick={closeMenu(()=>setPage('academies'))}>🏛 Académies</button>
-        <button className={`nl ${page==='daily'?'on':''}`} onClick={closeMenu(()=>setPage('daily'))} style={{color:'var(--O)'}}>📅 Défi</button>
+        <button className={`nl ${page==='daily'?'on':''}`} onClick={closeMenu(()=>setPage('daily'))} style={{color:'var(--O)'}}>🔍 Défi</button>
+        <button className={`nl ${page==='academy-map'?'on':''}`} onClick={closeMenu(()=>setPage('academy-map'))} style={{color:'var(--G)',fontWeight:page==='academy-map'?700:400}}>🏰 Mon Académie</button>
         <button className={`nl ${page==='tournament'?'on':''}`} onClick={closeMenu(()=>setPage('tournament'))} style={{color:'var(--Y)',fontWeight:page==='tournament'?700:400}}>🏆 Tournoi Alpha</button>
         <button className={`nl ${page==='actu'?'on':''}`} onClick={closeMenu(()=>setPage('actu'))} style={{color:'var(--G)',fontWeight:page==='actu'?700:400}}>📰 Actu</button>
         <button className={`nl ${page==='battles'?'on':''}`} onClick={closeMenu(()=>setPage('battles'))} style={{color:'var(--O)',fontWeight:page==='battles'?700:400}}>👁 Battles</button>
@@ -2968,14 +3033,63 @@ export default function DialectixV6(){
   const TrainPage=()=>{
     const [sel,setSel]=useState(null);
     const [topic,setTopic]=useState('');
+    // Calcul de la limite quotidienne restante pour les comptes gratuits
+    const getRemainingTrains=()=>{
+      if(user?.isPremium)return Infinity;
+      try{
+        const raw=JSON.parse(localStorage.getItem('dix_train_daily_v1')||'{}');
+        const todayStr=new Date().toISOString().slice(0,10);
+        const used=raw.date===todayStr?raw.count:0;
+        return Math.max(0,TRAINING_FREE_DAILY_LIMIT-used);
+      }catch{return TRAINING_FREE_DAILY_LIMIT;}
+    };
+    const remaining=getRemainingTrains();
+    const fmt=FORMATS.find(f=>f.id===selFormat)||FORMATS[0];
     return(
       <div className="page">
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
-          <div><div style={{fontFamily:'var(--fH)',fontSize:'1.3rem',letterSpacing:'.1em',textTransform:'uppercase'}}>🤖 Mode Entraînement</div><div style={{fontFamily:'var(--fM)',fontSize:'.6rem',color:'var(--muted)',marginTop:3}}>Sans login requis · N'affecte pas le classement</div></div>
-          <div style={{display:'flex',gap:4}}>
-            {FORMATS.map(f=><button key={f.id} className={`fmt-btn ${selFormat===f.id?'on':''}`} onClick={()=>setSelFormat(f.id)} title={f.desc}>{f.label}</button>)}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16,flexWrap:'wrap',gap:8}}>
+          <div>
+            <div style={{fontFamily:'var(--fH)',fontSize:'1.3rem',letterSpacing:'.1em',textTransform:'uppercase'}}>🤖 Mode Entraînement</div>
+            <div style={{fontFamily:'var(--fM)',fontSize:'.6rem',color:'var(--muted)',marginTop:3}}>Sans login requis · N'affecte pas le classement</div>
+          </div>
+          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+            {/* Sélecteur de format avec tooltips */}
+            <div style={{display:'flex',gap:4,position:'relative'}}>
+              {FORMATS.map(f=>(
+                <div key={f.id} style={{position:'relative',display:'inline-block'}} className="fmt-tooltip-wrap">
+                  <button className={`fmt-btn ${selFormat===f.id?'on':''}`}
+                    onClick={()=>setSelFormat(f.id)}
+                    title={f.tooltip}>
+                    {f.label}
+                  </button>
+                </div>
+              ))}
+            </div>
+            {/* Timing du format sélectionné */}
+            <div style={{fontFamily:'var(--fM)',fontSize:'.54rem',color:'var(--muted)',textAlign:'right'}}>
+              {fmt.readSec}s lecture · {fmt.writeSec}s rédaction
+            </div>
           </div>
         </div>
+        {/* Limite quotidienne gratuite */}
+        {!user?.isPremium&&(
+          <div style={{
+            background:remaining>0?'rgba(44,74,110,.05)':'rgba(140,58,48,.06)',
+            border:`1px solid ${remaining>0?'rgba(44,74,110,.18)':'rgba(140,58,48,.25)'}`,
+            borderRadius:8,padding:'8px 14px',marginBottom:16,
+            display:'flex',alignItems:'center',gap:10,
+          }}>
+            <span style={{fontSize:'1rem'}}>{remaining>0?'🎯':'🔒'}</span>
+            <div style={{flex:1}}>
+              <span style={{fontFamily:'var(--fB)',fontSize:'.7rem',fontWeight:600,color:remaining>0?'var(--A)':'var(--B)'}}>
+                {remaining>0?`${remaining} entraînement(s) gratuit(s) aujourd'hui`:'Limite quotidienne atteinte'}
+              </span>
+              <span style={{fontFamily:'var(--fM)',fontSize:'.58rem',color:'var(--muted)',marginLeft:8}}>
+                {remaining>0?`sur ${TRAINING_FREE_DAILY_LIMIT} max`:'· Revenez demain ou débattez en mode Compétitif'}
+              </span>
+            </div>
+          </div>
+        )}
         <div className="bot-grid" style={{marginBottom:20}}>
           {BOTS.map(b=>(
             <div key={b.id} className={`bot-card ${sel?.id===b.id?'sel':''}`} onClick={()=>setSel(b)}>
@@ -3149,7 +3263,24 @@ export default function DialectixV6(){
 
   /* ─── PROFILE PAGE ─── */
   const ProfilePage=()=>{
+    const [editMode,setEditMode]=useState(false);
+    const [editName,setEditName]=useState(user?.name||'');
+    const [savingProfile,setSavingProfile]=useState(false);
+
     if(!user)return(<div className="lock-screen"><div className="lock-icon">👤</div><div style={{fontFamily:'var(--fH)',fontSize:'1.5rem',letterSpacing:'.1em'}}>Profil joueur</div><div style={{fontFamily:'var(--fM)',fontSize:'.66rem',color:'var(--muted)',maxWidth:320,lineHeight:1.85,textAlign:'center'}}>Connectez-vous pour voir votre profil ELO, vos achievements et l'historique de vos débats.</div><button className="btn b-google b-lg" onClick={doGoogleLogin}>Se connecter avec Google</button><button className="btn b-ghost b-sm" style={{marginTop:8}} onClick={doLogin}>Connexion demo (sans Google)</button></div>);
+
+    const handleSaveProfile=async()=>{
+      if(!editName.trim()){showToast('Le nom ne peut pas être vide.','error');return;}
+      setSavingProfile(true);
+      const upd={...user,name:editName.trim()};
+      saveUser(upd);
+      // Sync Supabase profiles table
+      try{await SB.from('profiles').update({name:editName.trim()}).eq('id',user.id);}catch{}
+      setSavingProfile(false);
+      setEditMode(false);
+      showToast('✅ Profil mis à jour !','info');
+    };
+
     return(
       <div className="page">
         <div className="profile-head">
@@ -3157,7 +3288,24 @@ export default function DialectixV6(){
             {user.avatar?<img src={user.avatar} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:<span>{user.name[0]}</span>}
           </div>
           <div style={{flex:1}}>
-            <div className="profile-name">{user.name}</div>
+            {/* Mode édition du nom */}
+            {editMode?(
+              <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:6,flexWrap:'wrap'}}>
+                <input className="fi" style={{flex:1,maxWidth:280,fontSize:'.9rem',fontFamily:'var(--fH)',letterSpacing:'.04em'}}
+                  value={editName} onChange={e=>setEditName(e.target.value)}
+                  placeholder="Votre nom d'affichage"
+                  autoFocus/>
+                <button className="btn b-g b-sm" onClick={handleSaveProfile} disabled={savingProfile}>
+                  {savingProfile?<><div className="spin"/>…</>:'✓ Sauvegarder'}
+                </button>
+                <button className="btn b-ghost b-sm" onClick={()=>{setEditMode(false);setEditName(user.name);}}>Annuler</button>
+              </div>
+            ):(
+              <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                <div className="profile-name">{user.name}</div>
+                <button className="btn b-ghost b-sm" onClick={()=>{setEditMode(true);setEditName(user.name);}} style={{fontSize:'.6rem',padding:'3px 8px'}}>✏️ Modifier</button>
+              </div>
+            )}
             <div className="profile-handle">{user.email}</div>
             <div style={{display:'flex',alignItems:'center',gap:8,marginTop:6,flexWrap:'wrap'}}>
               <BadgePill elo={user.elo}/>
@@ -3546,29 +3694,95 @@ export default function DialectixV6(){
         {/* PAGES */}
         {showNav&&page==='home'&&<HomePage/>}
         {showNav&&page==='train'&&<TrainPage/>}
-        {showNav&&page==='compete'&&<CompetePage/>}
+        {showNav&&page==='compete'&&(
+          <CompetitiveLobby
+            user={user}
+            showToast={showToast}
+            onJoinRoom={room=>{
+              // Lancer un débat bot simulant la salle (nom de l'adversaire = créateur)
+              const b={id:'lobby_opponent',name:room.creator_name,style:'logical',elo:room.creator_elo||1200};
+              startBotDebate({...b,id:'analyste'},room.topic);
+            }}
+            startMM={startMM}
+            mmPhase={mmPhase}
+            mmTimer={mmTimer}
+            cancelMM={cancelMM}
+            mmPlayBot={mmPlayBot}
+            selFormat={selFormat}
+            setSelFormat={setSelFormat}
+            FORMATS={FORMATS}
+          />
+        )}
         {showNav&&page==='rank'&&<RankPage/>}
         {showNav&&page==='profile'&&<ProfilePage/>}
         {showNav&&page==='hall'&&<HallPage/>}
         {showNav&&page==='academies'&&<AcademiesPage/>}
-        {showNav&&page==='daily'&&<DailyPage/>}
+        {showNav&&page==='daily'&&(
+          <SophismDuel user={user} saveUser={saveUser} showToast={showToast}/>
+        )}
         {/* ── ARENA — modular, does not affect existing debate logic ── */}
         {showNav&&page==='arena'&&<ArenaPage user={user} saveUser={saveUser} showToast={showToast} setPage={setPage} leaderboard={leaderboard} supabase={SB}/>}
 
+        {/* ── FEATURE 2 — ACADEMY MAP + BOUTIQUE ───────────────────────────── */}
+        {showNav&&page==='academy-map'&&(
+          <AcademyMap user={user} saveUser={saveUser} showToast={showToast} setPage={setPage}/>
+        )}
+
         {/* ── MODULE 1 — TOURNAMENT ALPHA ───────────────────────────────────── */}
         {showNav&&page==='tournament'&&(
-          <TournamentSystem
-            user={user}
-            setPage={setPage}
-            showToast={showToast}
-            onChallenge={p=>{
-              // Start a bot debate using the opponent's name as the bot
-              if(!user){showToast({msg:'Connectez-vous pour challenger un joueur.',type:'error'});return;}
-              const topic=`Débat de tournoi contre ${p.name}`;
-              setPage('train');
-              setPhase('idle');
-            }}
-          />
+          <>
+            <TournamentSystem
+              user={user}
+              setPage={setPage}
+              showToast={showToast}
+              onShowRules={()=>setTournamentRulesOpen(true)}
+              onChallenge={p=>{
+                if(!user){showToast('Connectez-vous pour challenger un joueur.','error');return;}
+                const topic=`Débat de tournoi contre ${p.name}`;
+                setPage('train');
+                setPhase('idle');
+              }}
+            />
+            {/* Feature 6 — Fenêtre Règles du Tournoi (obligatoire avant Prêt) */}
+            {tournamentRulesOpen&&(
+              <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',backdropFilter:'blur(4px)',zIndex:900,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+                <div style={{background:'#FDFAF4',borderRadius:14,padding:'32px 28px',maxWidth:500,width:'100%',boxShadow:'0 24px 60px rgba(0,0,0,.25)',display:'flex',flexDirection:'column',gap:18}}>
+                  <div style={{textAlign:'center'}}>
+                    <div style={{fontSize:'2.2rem',marginBottom:8}}>⚖️</div>
+                    <div style={{fontFamily:'var(--fH)',fontSize:'1.25rem',letterSpacing:'.1em',textTransform:'uppercase'}}>Règles du Tournoi</div>
+                    <div style={{fontFamily:'var(--fM)',fontSize:'.58rem',color:'var(--muted)',marginTop:4}}>À lire obligatoirement avant de cliquer sur Prêt</div>
+                  </div>
+                  <div style={{background:'var(--s1)',borderRadius:10,padding:'16px 18px',border:'1px solid var(--bd)',display:'flex',flexDirection:'column',gap:10}}>
+                    {[
+                      ['🏆','Format','Élimination directe — perdant éliminé, vainqueur avance.'],
+                      ['⏱','Temps','Format Standard imposé : 3 min lecture / 5 min rédaction par phase.'],
+                      ['🤖','Bots','Les slots restants peuvent être remplis par 1 bot maximum par équipe (si le créateur l\'autorise). Les slots ne sont PAS auto-remplis.'],
+                      ['👥','Minimum','Un tournoi ne démarre que si tous les slots humains sont remplis.'],
+                      ['⚖️','Fair-play','Tout comportement irrespectueux entraîne une disqualification immédiate.'],
+                      ['📊','ELO','L\'ELO est affecté uniquement pour les tournois officiels classés.'],
+                    ].map(([ico,titre,texte])=>(
+                      <div key={titre} style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+                        <span style={{fontSize:'.9rem',flexShrink:0,marginTop:1}}>{ico}</span>
+                        <div>
+                          <span style={{fontFamily:'var(--fB)',fontSize:'.72rem',fontWeight:700,color:'var(--A)'}}>{titre} — </span>
+                          <span style={{fontFamily:'var(--fM)',fontSize:'.68rem',color:'var(--dim)'}}>{texte}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{display:'flex',gap:8}}>
+                    <button className="btn b-a b-lg" style={{flex:1,justifyContent:'center'}}
+                      onClick={()=>setTournamentRulesOpen(false)}>
+                      ✓ J'ai compris — Prêt !
+                    </button>
+                    <button className="btn b-ghost" onClick={()=>setTournamentRulesOpen(false)}>
+                      Fermer
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* ── MODULE 2 — DIALECTIX ACTU ─────────────────────────────────────── */}
@@ -3692,6 +3906,37 @@ export default function DialectixV6(){
 
         {/* ONBOARDING — shown once per browser, highest z-index after error boundary */}
         {showOnboarding&&<OnboardingModal/>}
+
+        {/* ── FEATURE 7 — CITATION DE SAGESSE ──────────────────────────────── */}
+        {wisdomQuote&&(
+          <div style={{position:'fixed',bottom:80,left:'50%',transform:'translateX(-50%)',zIndex:800,
+            maxWidth:420,width:'calc(100% - 32px)',
+            background:wisdomQuote.win
+              ?'linear-gradient(135deg,rgba(58,110,82,.95),rgba(44,74,110,.95))'
+              :'linear-gradient(135deg,rgba(44,74,110,.95),rgba(90,58,110,.95))',
+            borderRadius:14,padding:'20px 22px',boxShadow:'0 12px 40px rgba(0,0,0,.3)',
+            backdropFilter:'blur(12px)',border:'1px solid rgba(255,255,255,.15)',
+            animation:'slideUp .4s cubic-bezier(.34,1.56,.64,1)',
+          }}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+              <div style={{flex:1}}>
+                <div style={{fontFamily:'var(--fM)',fontSize:'.52rem',color:'rgba(255,255,255,.6)',textTransform:'uppercase',letterSpacing:'.14em',marginBottom:6}}>
+                  {wisdomQuote.win?'✦ Citation du vainqueur':'📖 Pensée réflexive'}
+                </div>
+                <p style={{fontFamily:'var(--fC)',fontSize:'1rem',color:'#fff',lineHeight:1.7,fontStyle:'italic',margin:'0 0 8px'}}>
+                  « {wisdomQuote.quote} »
+                </p>
+                <div style={{fontFamily:'var(--fH)',fontSize:'.64rem',letterSpacing:'.08em',color:'rgba(255,255,255,.7)'}}>
+                  — {wisdomQuote.author}
+                </div>
+              </div>
+              <button onClick={()=>setWisdomQuote(null)}
+                style={{background:'rgba(255,255,255,.15)',border:'1px solid rgba(255,255,255,.2)',borderRadius:6,padding:'4px 8px',color:'#fff',cursor:'pointer',fontSize:'.7rem',flexShrink:0}}>
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* TOAST */}
         {toast&&<Toast msg={toast.msg} type={toast.type} onDone={()=>setToast(null)}/>}
