@@ -74,7 +74,7 @@ function AnimatedScore({ value, color }) {
 }
 
 /* ─── Main component ─────────────────────────────────────────────────────────── */
-export default function ArgumentCard({ entry, side, name, defeatedId, scoreDisplay }) {
+export default function ArgumentCard({ entry, side, name, defeatedId, scoreDisplay, analyzing, avatar }) {
   const isWinner   = !!entry.decisive;
   const isDefeated = !isWinner && entry.id === defeatedId;
 
@@ -90,13 +90,14 @@ export default function ArgumentCard({ entry, side, name, defeatedId, scoreDispl
     setWinnerSettled(false);
   }, [isWinner]);
 
-  /* Build className — never mutate existing .entry / .ea / .eb classes */
+  /* Build className — preserves .entry/.ea/.eb + ajoute gold pulse si en analyse */
   const cls = [
     'entry',
     `e${side.toLowerCase()}`,
     isWinner && !winnerSettled ? 'btk-entry-winner' : '',
     isWinner &&  winnerSettled ? 'btk-entry-winner-settled' : '',
     isDefeated                 ? 'btk-entry-loser' : '',
+    analyzing                  ? 'gold-pulse' : '',
   ].filter(Boolean).join(' ');
 
   const color = side === 'A' ? 'var(--A)' : 'var(--B)';
@@ -110,6 +111,19 @@ export default function ArgumentCard({ entry, side, name, defeatedId, scoreDispl
 
       {/* ── Meta row ── */}
       <div className="emeta">
+        {/* Mini buste avatar */}
+        {avatar && (
+          <div style={{width:18,height:18,borderRadius:'50%',overflow:'hidden',flexShrink:0,
+            border:`1.5px solid ${side==='A'?'rgba(212,175,55,.6)':'rgba(100,100,120,.3)'}`,
+            background:'var(--s2)',display:'flex',alignItems:'center',justifyContent:'center',
+            marginRight:3}}>
+            {(avatar.startsWith('/')||avatar.startsWith('http'))
+              ?<img src={avatar} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}
+                  onError={e=>e.target.style.display='none'}/>
+              :<span style={{fontSize:'.5rem'}}>{avatar}</span>
+            }
+          </div>
+        )}
         <div className={`ebadge eb${side.toLowerCase()}`}>
           {name.split(' ')[0]}
         </div>
@@ -155,18 +169,7 @@ export default function ArgumentCard({ entry, side, name, defeatedId, scoreDispl
             >
               / 10
             </span>
-            {entry.confidence != null && (
-              <span
-                style={{
-                  fontFamily: 'var(--fM, sans-serif)',
-                  fontSize:   '.48rem',
-                  color:      'var(--muted)',
-                  opacity:    .7,
-                }}
-              >
-                · {Math.round(entry.confidence * 100)}% confiance
-              </span>
-            )}
+            {/* Confiance masquée (bruit visuel — info dans accordéon ArgScoreDisplay) */}
           </div>
         )}
 

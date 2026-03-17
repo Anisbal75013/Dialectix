@@ -60,29 +60,60 @@ export const CONSTRAINT_MODES = [
 ];
 
 // ─── Bracket engine ───────────────────────────────────────────────────────────
-// Génère un bracket d'élimination directe à partir d'une liste de participants
-// triés par ELO (seed 1 = meilleur). Supports 4, 8, 16, 32 joueurs.
+// Génère un bracket d'élimination directe à partir d'une liste de participants.
+// Matchmaking intelligent : interleave Affirmation vs Réfutation en seed 1 pour
+// que le 1er tour oppose, dans la mesure du possible, des camps adverses.
 export function generateBracket(participants) {
   const n = participants.length;
-  // Tête de série : le meilleur (1) affronte le moins bon (n), etc.
-  const seeded = [...participants].sort((a, b) => (b.elo || 1000) - (a.elo || 1000));
+
+  // ── Stance-aware seeding ─────────────────────────────────────────────────────
+  // Sépare les camps puis interleave [aff1, ref1, aff2, ref2, ...] afin que le
+  // pairing top-half vs bottom-half croise les stances au 1er tour.
+  const aff  = participants.filter(p => p.stance === 'affirmation' && !p.isBye)
+                           .sort((a, b) => (b.elo || 1000) - (a.elo || 1000));
+  const ref  = participants.filter(p => p.stance !== 'affirmation' && !p.isBye)
+                           .sort((a, b) => (b.elo || 1000) - (a.elo || 1000));
+  const byes = participants.filter(p => p.isBye);
+
+  const interleaved = [];
+  const maxLen = Math.max(aff.length, ref.length);
+  for (let i = 0; i < maxLen; i++) {
+    if (aff[i]) interleaved.push(aff[i]);
+    if (ref[i]) interleaved.push(ref[i]);
+  }
+  interleaved.push(...byes);
+  const seeded = interleaved.slice(0, n);
+
   const rounds = Math.log2(n);
   const matches = [];
-  // Round 1: paired by seed
+
+  // Round 1 : paired by seed (seed[0] vs seed[n-1], etc.)
   for (let i = 0; i < n / 2; i++) {
+    const p1 = seeded[i] || null;
+    const p2 = seeded[n - 1 - i] || null;
+    // Si les deux joueurs défendent le même camp → Duel de Nuances
+    const isDuelDeNuances = !!(
+      p1?.stance && p2?.stance &&
+      !p1.isBye && !p2.isBye &&
+      p1.stance === p2.stance
+    );
     matches.push({
       id: `r1m${i + 1}`,
       round: 1,
       matchNumber: i + 1,
-      player1: seeded[i] || null,
-      player2: seeded[n - 1 - i] || null,
+      player1: p1,
+      player2: p2,
       winner: null,
       constraintMode: CONSTRAINT_MODES[Math.floor(Math.random() * CONSTRAINT_MODES.length)].id,
       topic: null,
       played: false,
+      isDuelDeNuances,
+      status: 'pending',    // pending | ai_judged | contested | finalized
+      aiVerdict: null,
     });
   }
-  // Rounds suivants : slots vides, remplis au fur et à mesure des victoires
+
+  // Rounds suivants : slots vides
   for (let r = 2; r <= rounds; r++) {
     const matchesInRound = n / Math.pow(2, r);
     for (let m = 1; m <= matchesInRound; m++) {
@@ -96,10 +127,47 @@ export function generateBracket(participants) {
         constraintMode: CONSTRAINT_MODES[Math.floor(Math.random() * CONSTRAINT_MODES.length)].id,
         topic: null,
         played: false,
+        isDuelDeNuances: false,
+        status: 'pending',
+        aiVerdict: null,
       });
     }
   }
   return { matches, totalRounds: rounds, size: n };
+}
+
+// ─── Générateur de verdict IA (contextuel) ────────────────────────────────────
+// En production : remplacer ce générateur par un vrai appel à callClaude()
+// avec le transcript du débat et les scores de SophismDuel.
+function generateMatchVerdict(winner, loser, modeId, topic) {
+  const mode = CONSTRAINT_MODES.find(m => m.id === modeId) || CONSTRAINT_MODES[0];
+  const eloDiff = (winner?.elo || 1000) - (loser?.elo || 1000);
+
+  const summaries = [
+    `${winner?.name} a défendu sa position avec une rigueur argumentative exemplaire, structurant ses prémisses de façon cohérente et évitant les sophismes majeurs.`,
+    `L'argumentation de ${winner?.name} s'est distinguée par sa clarté et sa résistance aux contre-arguments : chaque objection a été réfutée méthodiquement.`,
+    `${winner?.name} a démontré une maîtrise supérieure de la logique formelle, exploitant avec précision les failles conceptuelles dans la position adverse.`,
+    `La construction rhétorique de ${winner?.name} était solide et bien étayée, avec des exemples pertinents et une progression logique irréfutable.`,
+  ];
+  const modeNotes = {
+    libre:       '',
+    sophiste:    ` Aucun sophisme majeur n'a été détecté dans son argumentation (critère Mode Sophiste respecté).`,
+    architecte:  ` Ses 3 prémisses étaient explicitement formulées et menaient logiquement à la conclusion (Mode Architecte validé).`,
+    oracle:      ` Les biais identifiés dans l'argument adverse étaient corrects et pertinents (Mode Oracle : bonus activé).`,
+  };
+
+  const summary = summaries[Math.floor(Math.random() * summaries.length)] + (modeNotes[modeId] || '');
+  const wScore = Math.min(100, Math.round(68 + Math.random() * 24 + Math.min(eloDiff / 50, 8)));
+  const lScore = Math.max(10, Math.min(67, Math.round(38 + Math.random() * 26 - Math.min(eloDiff / 50, 8))));
+
+  return {
+    summary,
+    winner:    { name: winner?.name,   score: wScore },
+    loser:     { name: loser?.name,    score: lScore },
+    mode:      mode.label,
+    topic:     topic || '—',
+    timestamp: Date.now(),
+  };
 }
 
 // Avance un vainqueur dans le bracket et remplit le slot du prochain match
@@ -208,6 +276,11 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
   const [selectedMode, setSelectedMode] = useState('libre');     // constraint mode for next match
   const [weeklyTopicEdit, setWeeklyTopicEdit] = useState(false);
   const [weeklyTopicDraft, setWeeklyTopicDraft] = useState('');
+  // ── Stance modal (inscription au tournoi) ─────────────────────────────────
+  const [showStanceModal, setShowStanceModal] = useState(false);
+  const [selectedStance, setSelectedStance]   = useState(null); // 'affirmation' | 'refutation'
+  // ── Champion celebration modal ─────────────────────────────────────────────
+  const [showChampionModal, setShowChampionModal] = useState(false);
 
   // Sync tournament from localStorage whenever it updates
   const refreshTournament = useCallback(() => {
@@ -215,6 +288,27 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
     setTournament(t);
     return t;
   }, []);
+
+  // ── Show champion celebration modal once per tournament per device ─────────
+  useEffect(() => {
+    const t = loadTournament();
+    if (!t) return;
+    const champion = t.champion || (t.bracket ? getBracketChampion(t.bracket) : null);
+    if (t.status === 'ended' && champion) {
+      const seenKey = `dx_champion_seen_${t.id}`;
+      if (!localStorage.getItem(seenKey)) {
+        setShowChampionModal(true);
+      }
+    }
+  }, []);
+
+  function handleDismissChampionModal() {
+    const t = loadTournament();
+    if (t) {
+      try { localStorage.setItem(`dx_champion_seen_${t.id}`, '1'); } catch {}
+    }
+    setShowChampionModal(false);
+  }
 
   // Countdown + auto-end timer
   useEffect(() => {
@@ -256,15 +350,22 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
     showToast && showToast('Tournoi initialisé avec succès !');
   }
 
-  function handleJoin() {
-    if (!user) return;
+  // Ouvre le modal de choix de camp — appelé directement par le bouton Rejoindre
+  function openStanceModal() {
+    setShowStanceModal(true);
+  }
+
+  // Appelé AU CLIC sur l'un des deux boutons de camp dans le modal
+  // Un seul clic = sélection + inscription immédiate
+  function confirmJoin(stance) {
+    setShowStanceModal(false);
     const t = loadTournament();
     if (!t || t.status !== 'active') return;
     if (t.participants.length >= TOURNAMENT_CONFIG.maxParticipants) {
       showToast && showToast('Le tournoi est complet.');
       return;
     }
-    if (t.participants.find(p => p.id === user.id)) {
+    if (user && t.participants.find(p => p.id === user.id)) {
       showToast && showToast('Vous êtes déjà inscrit.');
       return;
     }
@@ -273,19 +374,21 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
       participants: [
         ...t.participants,
         {
-          id: user.id,
-          name: user.name,
-          elo: user.elo ?? 1000,
+          id: user?.id   ?? `guest_${Date.now()}`,
+          name: user?.name ?? 'Joueur',
+          elo: user?.elo  ?? 1000,
+          stance,              // 'affirmation' | 'refutation'
           battles: 0,
           wins: 0,
           losses: 0,
-          avatar: user.avatar ?? null,
+          avatar: user?.avatar ?? null,
         },
       ],
     };
     saveTournament(updated);
     setTournament(updated);
-    showToast && showToast('Vous avez rejoint le tournoi !');
+    const stanceLabel = stance === 'affirmation' ? "l'Affirmation ✊" : "la Réfutation ⚔️";
+    showToast && showToast(`Inscrit — vous défendez ${stanceLabel}`);
   }
 
   function handleEndTournament() {
@@ -331,19 +434,90 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
     if (!isAdmin()) return;
     const t = loadTournament();
     if (!t?.bracket) return;
+
+    // Retrieve match data to find loser and generate verdict
+    const match = t.bracket.matches.find(m => m.id === matchId);
+    const loser  = match?.player1?.id === winner?.id ? match?.player2 : match?.player1;
+
+    // ── AI Verdict ────────────────────────────────────────────────────────────
+    const aiVerdict = generateMatchVerdict(winner, loser, match?.constraintMode, t.weeklyTopic);
+
     const newBracket = advanceBracket(t.bracket, matchId, winner);
-    const champion = getBracketChampion(newBracket);
-    const updated = { ...t, bracket: newBracket, ...(champion ? { status: 'ended', champion } : {}) };
+
+    // Attach verdict + status to the match
+    const bracketWithVerdict = {
+      ...newBracket,
+      matches: newBracket.matches.map(m =>
+        m.id === matchId ? { ...m, status: 'ai_judged', aiVerdict } : m
+      ),
+    };
+
+    const champion = getBracketChampion(bracketWithVerdict);
+    const updated  = { ...t, bracket: bracketWithVerdict, ...(champion ? { status: 'ended', champion } : {}) };
     saveTournament(updated);
     setTournament(updated);
+
     if (champion) {
-      const { elo, xp } = computeReward(newBracket.totalRounds, newBracket.totalRounds);
+      const { elo, xp } = computeReward(bracketWithVerdict.totalRounds, bracketWithVerdict.totalRounds);
       showToast && showToast(`🥇 Champion : ${champion.name} ! +${elo} ELO +${xp} XP`, 'achievement');
-      // Apply rewards if champion is current user
       if (user && saveUser && user.id === champion.id) {
         saveUser({ ...user, elo: (user.elo || 1000) + elo, xp: (user.xp || 0) + xp });
       }
+      try { localStorage.removeItem(`dx_champion_seen_${updated.id}`); } catch {}
+      setTimeout(() => setShowChampionModal(true), 800);
     }
+  }
+
+  // Joueur contesté → match passe en statut 'contested', alerte Admin
+  function handleContestMatch(matchId) {
+    const t = loadTournament();
+    if (!t?.bracket) return;
+    const updatedBracket = {
+      ...t.bracket,
+      matches: t.bracket.matches.map(m =>
+        m.id === matchId ? { ...m, status: 'contested' } : m
+      ),
+    };
+    const updated = { ...t, bracket: updatedBracket };
+    saveTournament(updated);
+    setTournament(updated);
+    showToast && showToast('⚖️ Verdict contesté — le Grand Architecte sera notifié.');
+    setActiveTab('bracket');
+  }
+
+  // Admin tranche après contestation (peut confirmer ou annuler le verdict IA)
+  function handleAdminFinalizeMatch(matchId, confirmedWinner) {
+    if (!isAdmin()) return;
+    const t = loadTournament();
+    if (!t?.bracket) return;
+    const match = t.bracket.matches.find(m => m.id === matchId);
+    if (!match) return;
+
+    const winner = confirmedWinner || match.winner;
+    const loser  = match.player1?.id === winner?.id ? match.player2 : match.player1;
+    const isOverride = confirmedWinner && confirmedWinner.id !== match.winner?.id;
+
+    const finalVerdict = {
+      ...(match.aiVerdict || {}),
+      summary: isOverride
+        ? `[Décision Admin] ${winner.name} désigné vainqueur après examen de la contestation. Le jugement de l'Oracle a été révisé par le Grand Architecte.`
+        : `[Décision Admin] Le verdict de l'Oracle est confirmé. ${winner.name} remporte le match définitivement.`,
+      winner: { name: winner?.name,  score: match.aiVerdict?.winner?.score || 75 },
+      loser:  { name: loser?.name,   score: match.aiVerdict?.loser?.score  || 45 },
+    };
+
+    const bracketFinalized = {
+      ...t.bracket,
+      matches: t.bracket.matches.map(m =>
+        m.id === matchId
+          ? { ...m, winner, status: 'finalized', aiVerdict: finalVerdict, played: true }
+          : m
+      ),
+    };
+    const updated = { ...t, bracket: bracketFinalized };
+    saveTournament(updated);
+    setTournament(updated);
+    showToast && showToast(`✅ ${winner.name} confirmé — verdict finalisé.`, 'achievement');
   }
 
   // ── Weekly Topic handlers ──────────────────────────────────────────────────
@@ -901,10 +1075,10 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
           <div style={styles.countdown}>Tournoi terminé</div>
         )}
 
-        {tournament.status === 'active' && user && !isParticipant && spotsLeft > 0 && (
+        {tournament.status === 'active' && !isParticipant && spotsLeft > 0 && (
           <div>
-            <button style={styles.joinBtn} onClick={handleJoin}>
-              Rejoindre le tournoi
+            <button style={styles.joinBtn} onClick={() => setShowStanceModal(true)}>
+              ✊ Choisir mon Camp &amp; Rejoindre
             </button>
             <div style={styles.spotsLabel}>
               {spotsLeft} place{spotsLeft > 1 ? 's' : ''} restante{spotsLeft > 1 ? 's' : ''}
@@ -1023,12 +1197,47 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
         </div>
       )}
 
-      {/* ── TABS: Leaderboard / Bracket ── */}
+      {/* ── ALERTE ADMIN : matches contestés ── */}
+      {isAdmin() && tournament?.bracket && (() => {
+        const contestedCount = tournament.bracket.matches.filter(m => m.status === 'contested').length;
+        if (!contestedCount) return null;
+        return (
+          <div style={{
+            maxWidth: 860, margin: '14px auto 0', padding: '0 16px',
+          }}>
+            <div style={{
+              background: 'rgba(220,80,50,.1)', border: '1.5px solid rgba(220,80,50,.45)',
+              borderLeft: '4px solid #DC5032', borderRadius: 10,
+              padding: '12px 18px', display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+            }}>
+              <div>
+                <span style={{ fontFamily: 'var(--fH)', fontSize: '.68rem', fontWeight: 800, color: '#DC5032', letterSpacing: '.06em' }}>
+                  ⚖️ {contestedCount} MATCH{contestedCount > 1 ? 'S' : ''} CONTESTÉ{contestedCount > 1 ? 'S' : ''}
+                </span>
+                <span style={{ fontFamily: 'var(--fM)', fontSize: '.58rem', color: 'var(--muted)', marginLeft: 10 }}>
+                  Votre intervention en tant que Grand Architecte est requise.
+                </span>
+              </div>
+              <button className="btn b-sm" onClick={() => setActiveTab('bracket')} style={{
+                background: '#DC5032', color: '#fff', border: 'none', borderRadius: 6,
+                fontFamily: 'var(--fB)', fontWeight: 700, fontSize: '.58rem', cursor: 'pointer',
+                padding: '5px 14px',
+              }}>
+                Voir le Bracket →
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── TABS: Leaderboard / Bracket / Règles ── */}
       <div style={{ maxWidth: 860, margin: '18px auto 0', padding: '0 16px' }}>
         <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid var(--bd)' }}>
           {[
             { id: 'leaderboard', label: '🏅 Classement' },
-            { id: 'bracket', label: `🏆 Bracket${bracket ? '' : ' (non lancé)'}` },
+            { id: 'bracket',     label: `🏆 Bracket${bracket ? '' : ' (non lancé)'}` },
+            { id: 'rules',       label: '📜 Règles' },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
               padding: '9px 18px', border: 'none', borderBottom: `2.5px solid ${activeTab === tab.id ? 'var(--A)' : 'transparent'}`,
@@ -1103,17 +1312,24 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
                             {p.name}
                             {isMe && (
                               <span style={{
-                                marginLeft: 6,
-                                fontSize: 10,
-                                background: 'var(--A)',
-                                color: '#fff',
-                                borderRadius: 4,
-                                padding: '2px 6px',
-                                fontWeight: 700,
-                                letterSpacing: '0.06em',
+                                marginLeft: 6, fontSize: 10,
+                                background: 'var(--A)', color: '#fff',
+                                borderRadius: 4, padding: '2px 6px',
+                                fontWeight: 700, letterSpacing: '0.06em',
                                 verticalAlign: 'middle',
+                              }}>Vous</span>
+                            )}
+                            {p.stance && (
+                              <span style={{
+                                marginLeft: 5, fontSize: 9,
+                                background: p.stance === 'affirmation' ? 'rgba(44,74,110,.18)' : 'rgba(140,58,48,.18)',
+                                color: p.stance === 'affirmation' ? '#2C4A6E' : '#8C3A30',
+                                border: `1px solid ${p.stance === 'affirmation' ? '#2C4A6E44' : '#8C3A3044'}`,
+                                borderRadius: 4, padding: '1px 5px',
+                                fontWeight: 700, letterSpacing: '0.04em',
+                                verticalAlign: 'middle', fontFamily: 'var(--fM)',
                               }}>
-                                Vous
+                                {p.stance === 'affirmation' ? '✊ Aff.' : '⚔️ Réf.'}
                               </span>
                             )}
                           </span>
@@ -1195,6 +1411,134 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
       )}
 
       {/* ══════════════════════════════════════════════════════════════════
+          RULES TAB — Règles de l'Agora
+      ══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'rules' && (
+        <div style={{ maxWidth: 720, margin: '28px auto 0', padding: '0 16px 48px' }}>
+          {/* Parchemin header */}
+          <div style={{
+            background: 'linear-gradient(160deg,rgba(198,161,91,.12),rgba(44,74,110,.06))',
+            border: '1.5px solid rgba(198,161,91,.35)',
+            borderRadius: 14, padding: '32px 28px 28px',
+            boxShadow: 'var(--sh)',
+          }}>
+            <div style={{ textAlign: 'center', marginBottom: 28 }}>
+              <div style={{ fontSize: '2.4rem', marginBottom: 8 }}>🏛️</div>
+              <div style={{
+                fontFamily: 'var(--fH)', fontSize: 'clamp(14px,4vw,20px)',
+                fontWeight: 900, letterSpacing: '.12em', textTransform: 'uppercase',
+                color: 'var(--Y)',
+              }}>
+                Bienvenue dans l'Agora des Champions
+              </div>
+              <div style={{
+                fontFamily: 'var(--fM)', fontSize: '.62rem', color: 'var(--muted)',
+                marginTop: 8, fontStyle: 'italic',
+              }}>
+                Ici, la rhétorique n'est pas un jeu, c'est une science.
+              </div>
+            </div>
+
+            {[
+              {
+                num: '1',
+                icon: '✊',
+                title: 'Défendez vos Convictions',
+                text: "Lors de votre inscription, choisissez votre camp : Affirmation ou Réfutation. Le destin tentera de vous opposer à un adversaire de l'avis contraire pour des duels d'autant plus intenses.",
+              },
+              {
+                num: '2',
+                icon: '🔮',
+                title: "L'IA est l'Arbitre",
+                text: "Chaque échange est scruté par l'Oracle (IA). Elle note votre rigueur, votre honnêteté intellectuelle et votre capacité à éviter les sophismes. Pas d'opinion — seulement la logique.",
+              },
+              {
+                num: '3',
+                icon: '⚖️',
+                title: "Le Verdict de l'Oracle",
+                text: "À la fin du match, l'IA désigne le vainqueur. Son jugement est basé sur la structure logique, la solidité des prémisses et l'absence de fallaces dans le raisonnement.",
+              },
+              {
+                num: '4',
+                icon: '🏛',
+                title: 'Le Droit de Cité (Contestation)',
+                text: "Si vous jugez que l'Oracle a failli, vous disposez d'un droit de contestation unique. Le Grand Architecte (Admin) interviendra alors pour rendre la justice finale. Son jugement est irrévocable.",
+              },
+            ].map(rule => (
+              <div key={rule.num} style={{
+                display: 'flex', gap: 16, alignItems: 'flex-start',
+                marginBottom: 22, paddingBottom: 22,
+                borderBottom: rule.num !== '4' ? '1px solid rgba(198,161,91,.15)' : 'none',
+              }}>
+                <div style={{
+                  flexShrink: 0, width: 40, height: 40, borderRadius: '50%',
+                  background: 'linear-gradient(135deg,rgba(198,161,91,.25),rgba(198,161,91,.1))',
+                  border: '1px solid rgba(198,161,91,.35)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '1.1rem',
+                }}>
+                  {rule.icon}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    fontFamily: 'var(--fH)', fontWeight: 800, fontSize: '.82rem',
+                    color: 'var(--txt)', marginBottom: 5, letterSpacing: '.04em',
+                  }}>
+                    Loi {rule.num} — {rule.title}
+                  </div>
+                  <div style={{
+                    fontFamily: 'var(--fM)', fontSize: '.65rem', color: 'var(--muted)',
+                    lineHeight: 1.7,
+                  }}>
+                    {rule.text}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <div style={{
+              marginTop: 4, padding: '14px 18px',
+              background: 'rgba(198,161,91,.07)', borderRadius: 8,
+              border: '1px solid rgba(198,161,91,.2)',
+              textAlign: 'center',
+            }}>
+              <div style={{ fontFamily: 'var(--fC)', fontSize: '.8rem', fontStyle: 'italic', color: 'var(--Y)', lineHeight: 1.6 }}>
+                « Que la meilleure logique gagne. »
+              </div>
+              <div style={{ fontFamily: 'var(--fM)', fontSize: '.54rem', color: 'var(--muted)', marginTop: 4, letterSpacing: '.08em' }}>
+                — Le Grand Architecte, fondateur de Dialectix
+              </div>
+            </div>
+
+            {/* Modes de contrainte */}
+            <div style={{ marginTop: 28 }}>
+              <div style={{ fontFamily: 'var(--fH)', fontSize: '.72rem', fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--A)', marginBottom: 14, paddingBottom: 8, borderBottom: '1px solid var(--bd)' }}>
+                ⚔️ Les Modes de Contrainte
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+                {CONSTRAINT_MODES.map(mode => (
+                  <div key={mode.id} style={{
+                    background: `${mode.color}0d`, border: `1px solid ${mode.color}33`,
+                    borderLeft: `3px solid ${mode.color}`, borderRadius: 8, padding: '12px 14px',
+                  }}>
+                    <div style={{ fontFamily: 'var(--fB)', fontSize: '.72rem', fontWeight: 800, color: mode.color, marginBottom: 4 }}>
+                      {mode.icon} {mode.label}
+                    </div>
+                    <div style={{ fontFamily: 'var(--fM)', fontSize: '.58rem', color: 'var(--muted)', lineHeight: 1.55, marginBottom: 4 }}>
+                      {mode.desc}
+                    </div>
+                    <div style={{ fontFamily: 'var(--fM)', fontSize: '.54rem', color: mode.color, fontStyle: 'italic' }}>
+                      Notation : {mode.scoring}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
           BRACKET TAB — Élimination directe
       ══════════════════════════════════════════════════════════════════ */}
       {activeTab === 'bracket' && (
@@ -1232,7 +1576,7 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
               )}
 
               {/* Rounds display — scrollable horizontally on mobile */}
-              <div style={{ overflowX: 'auto', paddingBottom: 12 }}>
+              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: 12 }}>
                 <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', minWidth: bracketRounds.length * 200 }}>
                   {bracketRounds.map(({ round, label, matches: rMatches }) => (
                     <div key={round} style={{ flex: '0 0 188px' }}>
@@ -1254,13 +1598,47 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
                               boxShadow: 'var(--sh2)',
                             }}>
                               {/* Mode badge */}
-                              <div style={{
-                                display: 'inline-flex', alignItems: 'center', gap: 4,
-                                background: `${modeInfo.color}15`, border: `1px solid ${modeInfo.color}44`,
-                                borderRadius: 20, padding: '2px 8px', marginBottom: 8,
-                                fontFamily: 'var(--fM)', fontSize: '.48rem', color: modeInfo.color,
-                              }}>
-                                {modeInfo.icon} {modeInfo.label}
+                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+                                <div style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                                  background: `${modeInfo.color}15`, border: `1px solid ${modeInfo.color}44`,
+                                  borderRadius: 20, padding: '2px 8px',
+                                  fontFamily: 'var(--fM)', fontSize: '.48rem', color: modeInfo.color,
+                                }}>
+                                  {modeInfo.icon} {modeInfo.label}
+                                </div>
+                                {/* Duel de Nuances badge */}
+                                {match.isDuelDeNuances && (
+                                  <div style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                                    background: 'rgba(198,161,91,.12)', border: '1px solid rgba(198,161,91,.4)',
+                                    borderRadius: 20, padding: '2px 7px',
+                                    fontFamily: 'var(--fM)', fontSize: '.46rem', color: '#C6A15B',
+                                  }}>
+                                    🤝 Duel de Nuances
+                                  </div>
+                                )}
+                                {/* Status badge */}
+                                {match.status === 'contested' && (
+                                  <div style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                                    background: 'rgba(220,80,50,.1)', border: '1px solid rgba(220,80,50,.4)',
+                                    borderRadius: 20, padding: '2px 7px',
+                                    fontFamily: 'var(--fM)', fontSize: '.46rem', color: '#DC5032',
+                                  }}>
+                                    ⚖️ Contesté
+                                  </div>
+                                )}
+                                {match.status === 'finalized' && (
+                                  <div style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                                    background: 'rgba(58,110,82,.1)', border: '1px solid rgba(58,110,82,.4)',
+                                    borderRadius: 20, padding: '2px 7px',
+                                    fontFamily: 'var(--fM)', fontSize: '.46rem', color: 'var(--G)',
+                                  }}>
+                                    ✅ Finalisé
+                                  </div>
+                                )}
                               </div>
 
                               {/* Player slots */}
@@ -1305,6 +1683,94 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
                                 }} style={{ width: '100%', justifyContent: 'center', fontSize: '.50rem', marginTop: 6 }}>
                                   BYE → avancer
                                 </button>
+                              )}
+
+                              {/* ── Verdict IA ────────────────────────────────── */}
+                              {match.aiVerdict && (
+                                <div style={{
+                                  marginTop: 10, padding: '10px 10px 8px',
+                                  background: 'rgba(44,74,110,.06)',
+                                  border: '1px solid rgba(44,74,110,.18)',
+                                  borderRadius: 7,
+                                }}>
+                                  <div style={{ fontFamily: 'var(--fM)', fontSize: '.5rem', color: 'var(--A)', fontWeight: 700, letterSpacing: '.08em', marginBottom: 5 }}>
+                                    🔮 VERDICT DE L'ORACLE
+                                  </div>
+                                  <div style={{ fontFamily: 'var(--fM)', fontSize: '.56rem', color: 'var(--muted)', lineHeight: 1.55, marginBottom: 7 }}>
+                                    {match.aiVerdict.summary}
+                                  </div>
+                                  {/* Scores bar */}
+                                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                                    <span style={{ fontFamily: 'var(--fM)', fontSize: '.5rem', color: 'var(--G)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                      {match.aiVerdict.winner?.name?.split(' ')[0]} {match.aiVerdict.winner?.score}/100
+                                    </span>
+                                    <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'var(--bd)', overflow: 'hidden' }}>
+                                      <div style={{
+                                        height: '100%', borderRadius: 2,
+                                        background: 'linear-gradient(90deg,var(--G),var(--A))',
+                                        width: `${match.aiVerdict.winner?.score || 70}%`,
+                                      }} />
+                                    </div>
+                                    <span style={{ fontFamily: 'var(--fM)', fontSize: '.5rem', color: 'var(--O)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                      {match.aiVerdict.loser?.name?.split(' ')[0]} {match.aiVerdict.loser?.score}/100
+                                    </span>
+                                  </div>
+
+                                  {/* Contest button — visible au perdant (ou tout participant) */}
+                                  {match.status === 'ai_judged' && user &&
+                                    (match.player1?.id === user.id || match.player2?.id === user.id) &&
+                                    match.winner?.id !== user.id && (
+                                    <button
+                                      onClick={() => handleContestMatch(match.id)}
+                                      style={{
+                                        width: '100%', padding: '5px 0',
+                                        background: 'rgba(220,80,50,.1)',
+                                        border: '1px solid rgba(220,80,50,.35)',
+                                        borderRadius: 5, cursor: 'pointer',
+                                        fontFamily: 'var(--fB)', fontSize: '.5rem',
+                                        fontWeight: 700, color: '#DC5032',
+                                        letterSpacing: '.04em',
+                                      }}
+                                    >
+                                      ⚖️ Contester le Verdict
+                                    </button>
+                                  )}
+
+                                  {/* Admin: finalize contested match */}
+                                  {isAdmin() && match.status === 'contested' && (
+                                    <div style={{ marginTop: 8 }}>
+                                      <div style={{ fontFamily: 'var(--fM)', fontSize: '.5rem', color: '#DC5032', fontWeight: 700, marginBottom: 5, letterSpacing: '.06em' }}>
+                                        🔐 DÉCISION ADMIN — Tranchez le litige :
+                                      </div>
+                                      <div style={{ display: 'flex', gap: 4 }}>
+                                        <button
+                                          className="btn b-g b-sm"
+                                          onClick={() => handleAdminFinalizeMatch(match.id, match.winner)}
+                                          style={{ flex: 1, justifyContent: 'center', fontSize: '.48rem' }}
+                                        >
+                                          ✅ Confirmer {match.winner?.name?.split(' ')[0]}
+                                        </button>
+                                        {[match.player1, match.player2].map(p =>
+                                          p && p.id !== match.winner?.id ? (
+                                            <button
+                                              key={p.id}
+                                              className="btn b-sm"
+                                              onClick={() => handleAdminFinalizeMatch(match.id, p)}
+                                              style={{
+                                                flex: 1, justifyContent: 'center', fontSize: '.48rem',
+                                                background: '#DC5032', color: '#fff', border: 'none',
+                                                borderRadius: 5, cursor: 'pointer', fontFamily: 'var(--fB)',
+                                                fontWeight: 700, padding: '4px',
+                                              }}
+                                            >
+                                              🔄 {p.name?.split(' ')[0]} gagne
+                                            </button>
+                                          ) : null
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                           );
@@ -1366,6 +1832,235 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
       )}
 
       <div style={{ height: 40 }} />
+
+      {/* ══════════════════════════════════════════════════════════════════
+          MODAL STANCE — Choix du Camp avant l'inscription
+      ══════════════════════════════════════════════════════════════════ */}
+      {showStanceModal && (
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(5px)',
+          zIndex: 950, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+        }}>
+          <div style={{
+            background: '#FDFAF4', borderRadius: 16, padding: '30px 24px',
+            maxWidth: 480, width: '100%', boxShadow: '0 28px 70px rgba(0,0,0,.35)',
+          }}>
+            <div style={{ fontFamily: 'var(--fH)', fontSize: '1rem', letterSpacing: '.08em', marginBottom: 4, textAlign: 'center' }}>
+              ⚔️ Déclaration d'Intention
+            </div>
+            <div style={{ fontFamily: 'var(--fM)', fontSize: '.62rem', color: 'var(--muted)', marginBottom: 22, textAlign: 'center', lineHeight: 1.6 }}>
+              Quel camp défendrez-vous dans ce tournoi ?<br />
+              Votre conviction guidera vos matchs. Choisissez avec sagesse.
+            </div>
+
+            {/* Sujet de la semaine en rappel */}
+            {tournament?.weeklyTopic && (
+              <div style={{
+                background: 'rgba(198,161,91,.08)', border: '1px solid rgba(198,161,91,.3)',
+                borderRadius: 8, padding: '10px 14px', marginBottom: 18, textAlign: 'center',
+              }}>
+                <div style={{ fontFamily: 'var(--fM)', fontSize: '.5rem', color: '#C6A15B', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 4 }}>
+                  📅 Sujet de la semaine
+                </div>
+                <div style={{ fontFamily: 'var(--fC)', fontSize: '.82rem', fontStyle: 'italic', color: 'var(--txt)', lineHeight: 1.5 }}>
+                  « {tournament.weeklyTopic} »
+                </div>
+              </div>
+            )}
+
+            {/* ── Boutons de camp : 1 clic = sélection + inscription immédiate ── */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+              {[
+                {
+                  id: 'affirmation',
+                  icon: '✊',
+                  label: "Je défends l'Affirmation",
+                  sub: 'Je soutiens et argumente en faveur de la proposition.',
+                  color: '#2C4A6E',
+                },
+                {
+                  id: 'refutation',
+                  icon: '⚔️',
+                  label: 'Je défends la Réfutation',
+                  sub: 'Je conteste et réfute la proposition avec rigueur.',
+                  color: '#8C3A30',
+                },
+              ].map(camp => (
+                <button
+                  key={camp.id}
+                  onClick={() => confirmJoin(camp.id)}
+                  style={{
+                    flex: 1, padding: '22px 14px', borderRadius: 10, cursor: 'pointer',
+                    border: `2px solid ${camp.color}`,
+                    background: `${camp.color}0d`,
+                    textAlign: 'center',
+                    transition: 'all .12s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = `${camp.color}20`; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 6px 20px ${camp.color}33`; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = `${camp.color}0d`; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
+                >
+                  <div style={{ fontSize: '2.2rem', marginBottom: 10 }}>{camp.icon}</div>
+                  <div style={{
+                    fontFamily: 'var(--fH)', fontSize: '.75rem', fontWeight: 800,
+                    color: camp.color, marginBottom: 8, letterSpacing: '.04em',
+                  }}>
+                    {camp.label}
+                  </div>
+                  <div style={{ fontFamily: 'var(--fM)', fontSize: '.57rem', color: 'var(--muted)', lineHeight: 1.55 }}>
+                    {camp.sub}
+                  </div>
+                  <div style={{
+                    marginTop: 14, padding: '7px 0',
+                    background: camp.color, color: '#fff',
+                    borderRadius: 7, fontFamily: 'var(--fB)',
+                    fontWeight: 800, fontSize: '.62rem', letterSpacing: '.06em',
+                  }}>
+                    Choisir ce camp →
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setShowStanceModal(false)}
+              style={{
+                width: '100%', padding: '10px 0',
+                background: 'transparent', color: 'var(--muted)',
+                border: '1px solid var(--bd)', borderRadius: 8, cursor: 'pointer',
+                fontFamily: 'var(--fM)', fontSize: '.62rem',
+              }}
+            >
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          MODAL CHAMPION — Célébration visible par tous les utilisateurs
+      ══════════════════════════════════════════════════════════════════ */}
+      {showChampionModal && (() => {
+        const t = tournament;
+        const champ = t?.champion || (t?.bracket ? getBracketChampion(t.bracket) : null);
+        if (!champ) return null;
+        const { elo, xp } = t?.bracket
+          ? computeReward(t.bracket.totalRounds, t.bracket.totalRounds)
+          : { elo: 150, xp: 500 };
+        return (
+          <div style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,.65)',
+            backdropFilter: 'blur(6px)',
+            zIndex: 1000,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 20,
+          }}>
+            <div style={{
+              background: 'linear-gradient(160deg,#1a120b 0%,#2C1A0E 60%,#3A2010 100%)',
+              border: '2px solid rgba(198,161,91,.6)',
+              borderRadius: 18,
+              padding: '36px 28px 28px',
+              maxWidth: 420, width: '100%',
+              textAlign: 'center',
+              boxShadow: '0 32px 80px rgba(0,0,0,.5), 0 0 60px rgba(198,161,91,.15)',
+              position: 'relative',
+            }}>
+              {/* Confetti stars decoration */}
+              <div style={{ fontSize: '2rem', letterSpacing: '0.5rem', marginBottom: 8, opacity: 0.6 }}>
+                ✨ ⭐ ✨
+              </div>
+
+              <div style={{ fontSize: '4rem', marginBottom: 10, filter: 'drop-shadow(0 0 12px rgba(198,161,91,.6))' }}>
+                🥇
+              </div>
+
+              <div style={{
+                fontFamily: 'var(--fH)',
+                fontSize: 'clamp(11px, 3vw, 14px)',
+                letterSpacing: '.18em',
+                textTransform: 'uppercase',
+                color: 'rgba(198,161,91,.7)',
+                marginBottom: 6,
+              }}>
+                Champion du Tournoi
+              </div>
+
+              <div style={{
+                fontFamily: 'var(--fH)',
+                fontSize: 'clamp(20px, 6vw, 28px)',
+                fontWeight: 900,
+                color: '#C6A15B',
+                letterSpacing: '.04em',
+                marginBottom: 12,
+                textShadow: '0 0 20px rgba(198,161,91,.4)',
+              }}>
+                {champ.name}
+              </div>
+
+              <div style={{
+                fontFamily: 'var(--fM)',
+                fontSize: '.62rem',
+                color: 'rgba(255,255,255,.45)',
+                marginBottom: 20,
+                lineHeight: 1.6,
+              }}>
+                A dominé l'arène et emporté la victoire finale.
+                <br />
+                <span style={{ color: 'rgba(198,161,91,.7)', fontWeight: 700 }}>
+                  +{elo} ELO · +{xp} XP
+                </span>
+              </div>
+
+              <div style={{
+                display: 'flex',
+                gap: 8,
+                justifyContent: 'center',
+              }}>
+                <button
+                  onClick={handleDismissChampionModal}
+                  style={{
+                    padding: '12px 32px',
+                    background: 'linear-gradient(135deg,#C6A15B,#9A7A3A)',
+                    color: '#1a120b',
+                    border: 'none',
+                    borderRadius: 9,
+                    fontFamily: 'var(--fH)',
+                    fontWeight: 800,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    letterSpacing: '.06em',
+                    textTransform: 'uppercase',
+                    boxShadow: '0 4px 16px rgba(198,161,91,.3)',
+                  }}
+                >
+                  👑 Félicitations !
+                </button>
+                {activeTab !== 'bracket' && (
+                  <button
+                    onClick={() => { setActiveTab('bracket'); handleDismissChampionModal(); }}
+                    style={{
+                      padding: '12px 20px',
+                      background: 'rgba(255,255,255,.08)',
+                      color: 'rgba(255,255,255,.7)',
+                      border: '1px solid rgba(255,255,255,.15)',
+                      borderRadius: 9,
+                      fontFamily: 'var(--fB)',
+                      fontWeight: 700,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                      letterSpacing: '.04em',
+                    }}
+                  >
+                    Voir le bracket
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }

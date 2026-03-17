@@ -347,6 +347,32 @@ const getBadge =elo=>BADGES.slice().reverse().find(b=>elo>=b.min)||BADGES[0];
 const getNextB =elo=>{const i=BADGES.findIndex(b=>b.id===getBadge(elo).id);return i<BADGES.length-1?BADGES[i+1]:null};
 const rankPct  =elo=>{const cur=getBadge(elo),nxt=getNextB(elo);if(!nxt)return 100;return Math.round(((elo-cur.min)/(nxt.min-cur.min))*100)};
 
+/* ══════════════════════════════════════════════════════════════
+   SONS — utilitaire léger (respecte la politique autoplay)
+   Les fichiers .mp3 doivent être dans /public/sounds/
+══════════════════════════════════════════════════════════════ */
+const _audioCache={};
+function playSound(src,vol=0.45){
+  try{
+    if(!_audioCache[src])_audioCache[src]=new Audio(src);
+    const a=_audioCache[src];
+    a.volume=vol;
+    a.currentTime=0;
+    a.play().catch(()=>{}); // silencieux si bloqué par l'autoplay
+  }catch{}
+}
+
+/* ── Titres XP : progression de l'Orateur ── */
+const XP_TITLES=[
+  {min:2000,icon:'👑',label:'Maître de la Sagesse'},
+  {min:1001,icon:'🦉',label:'Grand Sophiste'},
+  {min:601, icon:'🏛️',label:'Érudit de l\'Académie'},
+  {min:301, icon:'🏺',label:'Disciple Éveillé'},
+  {min:101, icon:'📜',label:'Apprenti Dialecticien'},
+  {min:0,   icon:'🪵',label:'Novice de l\'Agora'},
+];
+const getXpTitle=xp=>XP_TITLES.find(t=>(xp||0)>=t.min)||XP_TITLES[XP_TITLES.length-1];
+
 function applyScore(prev,scores,alpha=.35){
   if(!scores)return prev;
   return Object.fromEntries(CRITERIA.map(c=>[c.key,clamp(lerp(prev[c.key]||5,scores[c.key]??prev[c.key]??5,alpha),0,10)]));
@@ -503,8 +529,17 @@ async function aiReport(tx,nA,nB,sA,sB,vars,topic,elapsed,format){
 }
 
 /* ── SPEECH ────────────────────────────────────────────────── */
-function useSpeech(onFinal,onInterim,onError=()=>{}){
+/* useSpeech — reconnaissance vocale avec buffer global
+ * onFinal   : appelé pour chaque segment reconnu (on accumule dans l'input)
+ * onInterim : texte temporaire affiché pendant l'écoute
+ * onStop    : appelé quand le micro s'arrête (auto-envoi si buffer ≥ 40 cars)
+ * onError   : callback d'erreur
+ */
+function useSpeech(onFinal,onInterim,onStop,onError=()=>{}){
   const ref=useRef(null);
+  // Ref pour onStop : toujours la version la plus récente, sans stale closure
+  const onStopRef=useRef(onStop);
+  useEffect(()=>{onStopRef.current=onStop;},[onStop]);
   const [active,setActive]=useState(false);
   const start=useCallback(()=>{
     const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -512,11 +547,13 @@ function useSpeech(onFinal,onInterim,onError=()=>{}){
     if(ref.current)ref.current.stop();
     const r=new SR();r.lang='fr-FR';r.continuous=true;r.interimResults=true;
     r.onresult=e=>{let i='',f='';for(let x=e.resultIndex;x<e.results.length;x++){const t=e.results[x][0].transcript;if(e.results[x].isFinal)f+=t;else i+=t}if(i)onInterim(i);if(f.trim())onFinal(f.trim())};
-    r.onerror=()=>setActive(false);r.onend=()=>setActive(false);
+    r.onerror=()=>setActive(false);
+    // ── onend : désactiver + déclencher auto-envoi si buffer suffisant ──
+    r.onend=()=>{setActive(false);onStopRef.current&&onStopRef.current();};
     r.start();ref.current=r;setActive(true);
-  },[onFinal,onInterim]);
-  const stop=useCallback(()=>{ref.current?.stop();setActive(false)},[]);
-  const toggle=useCallback(()=>{active?stop():start()},[active,start,stop]);
+  },[onFinal,onInterim,onError]);
+  const stop=useCallback(()=>{ref.current?.stop();setActive(false);},[]);
+  const toggle=useCallback(()=>{active?stop():start();},[active,start,stop]);
   return{active,toggle,stop};
 }
 
@@ -696,8 +733,8 @@ input,button,textarea,select{font-family:inherit}
 .phase-sep{color:var(--muted);font-size:.7rem;opacity:.35}
 
 /* ── ARENA ── */
-.arena{display:grid;grid-template-columns:1fr 284px 1fr;flex:1;overflow:hidden}
-.pane{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--bd)}
+.arena{display:grid;grid-template-columns:1fr 284px 1fr;flex:1;overflow:hidden;background:url('/assets/marbre.jpg') center/cover;background-attachment:local}
+.pane{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--bd);background:color-mix(in srgb,var(--s0) 88%,transparent);backdrop-filter:blur(1px)}
 .pane:last-child{border-right:none}
 .ph{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--bd);background:var(--s1);flex-shrink:0}
 .ph-t{font-family:var(--fH);font-size:.82rem;letter-spacing:.14em}
@@ -872,7 +909,24 @@ input,button,textarea,select{font-family:inherit}
 .w-slot.ok{border-color:var(--G)}
 
 /* ── PROFILE ── */
-.profile-head{display:flex;align-items:flex-start;gap:20px;margin-bottom:24px}
+/* ════════════════════════════════════════════════════════════
+   PROFILE CODEX — Manuscrit ivoire / or
+════════════════════════════════════════════════════════════ */
+@keyframes codexFadeIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+@keyframes radarExpand{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes xpTitleGlow{0%,100%{text-shadow:0 0 0 transparent}50%{text-shadow:0 0 10px rgba(212,175,55,.5)}}
+.codex-page{background:url('/assets/parchemin.jpg') center/cover scroll!important;color:#2a1f0e!important;--muted:#7a6a50;--bd:#d4af3766;--s2:rgba(212,175,55,.06);--s3:rgba(212,175,55,.1);animation:codexFadeIn .5s ease both}
+.codex-card{background:rgba(255,252,240,.85)!important;border:1px solid rgba(212,175,55,.4)!important;border-radius:12px!important;margin-bottom:18px!important;padding:18px 20px!important;box-shadow:0 2px 12px rgba(180,150,80,.12)!important}
+.codex-title{font-family:Georgia,'Playfair Display',serif;font-size:.82rem;letter-spacing:.1em;font-weight:600;text-transform:none;color:#8b6914;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.codex-title::before,.codex-title::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,transparent,rgba(212,175,55,.5),transparent)}
+/* Radar polygon : expansion depuis le centre (SVG transform-origin = viewBox center 100 100) */
+.radar-polygon{transform-origin:100px 100px;transform-box:fill-box;animation:radarExpand 1s cubic-bezier(.34,1.56,.64,1) both}
+.radar-dot{transform-box:fill-box;transform-origin:center;animation:radarExpand 1s cubic-bezier(.34,1.56,.64,1) both}
+/* Titre XP : discret + lueur dorée */
+.xp-title-badge{font-family:Georgia,'Playfair Display',serif;font-size:.62rem;font-style:italic;color:rgba(212,175,55,.85);letter-spacing:.04em;line-height:1.2}
+@keyframes graverSpark{0%{box-shadow:0 0 0 0 rgba(212,175,55,.7);background:rgba(212,175,55,.2)}40%{box-shadow:0 0 16px 4px rgba(212,175,55,.45);background:rgba(212,175,55,.45)}80%{box-shadow:0 0 6px 2px rgba(212,175,55,.2);background:rgba(212,175,55,.2)}100%{box-shadow:none;background:rgba(212,175,55,.2)}}
+.graver-saved{animation:graverSpark .7s ease-out forwards;color:#5a3e00!important;border-color:#d4af37!important}
+.profile-head{display:flex;align-items:flex-start;gap:20px;margin-bottom:24px;position:relative}
 .profile-name{font-family:var(--fH);font-size:1.6rem;letter-spacing:.08em;line-height:1}
 .profile-handle{font-family:var(--fB);font-size:.64rem;font-weight:400;color:var(--muted);margin-top:4px}
 .pstat-row{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
@@ -964,6 +1018,96 @@ input,button,textarea,select{font-family:inherit}
   /* Quick train header : stack on small */
   .home-main > div > div:first-child{flex-wrap:wrap!important;gap:8px!important}
 }
+
+/* ══════════════════════════════════════════════════════════════
+   VS HEADER — en-tête sticky compact (avatars + jauges + scores)
+══════════════════════════════════════════════════════════════ */
+.vs-hdr{display:flex;align-items:center;padding:7px 12px;background:var(--s0);border-bottom:2px solid var(--bd);flex-shrink:0;gap:6px;position:sticky;top:0;z-index:30}
+.vs-side{display:flex;flex-direction:column;align-items:center;flex:1;gap:2px;min-width:0}
+.vs-side-a{align-items:flex-start}.vs-side-b{align-items:flex-end}
+.vs-row{display:flex;align-items:center;gap:6px;width:100%}
+.vs-row-b{flex-direction:row-reverse}
+.vs-av{width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid var(--bd2);flex-shrink:0;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:.62rem;font-weight:700;overflow:hidden}
+.vs-name{font-family:var(--fH);font-size:.58rem;letter-spacing:.07em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.vs-score-v{font-family:var(--fH);font-size:1rem;line-height:1;letter-spacing:.02em}
+.vs-score-a{color:var(--A)}.vs-score-b{color:var(--B)}
+.vs-hp{flex:1;height:4px;background:var(--bd);border-radius:3px;overflow:hidden;min-width:24px}
+.vs-hp-fill{height:100%;border-radius:3px;transition:width .9s ease}
+.vs-sep{font-family:var(--fH);font-size:.62rem;color:var(--muted);letter-spacing:.14em;padding:0 2px;flex-shrink:0}
+.vs-phase{font-family:var(--fM);font-size:.46rem;color:var(--muted);letter-spacing:.06em;text-align:center;padding:0 6px;flex-shrink:0;opacity:.8}
+
+/* ══════════════════════════════════════════════════════════════
+   GOLD PULSE — animation analyse en cours (bulle)
+══════════════════════════════════════════════════════════════ */
+@keyframes goldPulse{
+  0%{box-shadow:0 0 0 0 rgba(212,175,55,.4);border-color:rgba(212,175,55,.5)}
+  50%{box-shadow:0 0 15px 5px rgba(212,175,55,.2);border-color:rgba(212,175,55,1)}
+  100%{box-shadow:0 0 0 0 rgba(212,175,55,.4);border-color:rgba(212,175,55,.5)}
+}
+.gold-pulse{animation:goldPulse 2s infinite ease-in-out!important;border:1.5px solid #d4af37!important}
+.oracle-waiting{font-family:var(--fM);font-size:.54rem;color:rgba(212,175,55,.75);font-style:italic;text-align:center;letter-spacing:.06em;padding:3px 0 6px;animation:goldPulse 2s infinite ease-in-out}
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE — ARÈNE CHAT STYLE
+══════════════════════════════════════════════════════════════ */
+@media(max-width:767px){
+  /* ── Layout principal : colonne unique ── */
+  .arena{display:flex!important;flex-direction:column!important;gap:0!important;overflow:hidden!important;flex:1!important}
+  /* ── Masquer la colonne centrale des scores (résumé dans VS header) ── */
+  .pane-scores{display:none!important}
+  /* ── Pane unique chat : overflow-y:auto pour que .pb défile ── */
+  .pane-chat{flex:1!important;width:100%!important;overflow-y:auto!important;overflow-x:hidden!important;border:none!important;display:flex!important;flex-direction:column!important}
+  /* ── VS Header : toujours visible en haut (flex item fixe + sticky) ── */
+  .vs-hdr{position:sticky!important;top:0!important;z-index:50!important;flex-shrink:0!important}
+  /* ── Phase bar : moitié moins haute ── */
+  .phase-bar{height:20px!important;padding:0 12px!important;font-size:.52rem!important}
+  .phase-label{font-size:.52rem!important}
+  /* ── Feed chat : bulles Codex-style ── */
+  .pb{padding:10px 12px 108px!important;gap:6px!important;flex:1!important;overflow-y:auto!important}
+  /* Toutes les entrées : bulle iMessage */
+  .entry{border-left:none!important;border:1px solid transparent!important;border-radius:16px!important;
+    max-width:86%!important;padding:9px 13px!important;box-shadow:0 1px 6px rgba(30,20,5,.07)!important}
+  /* ── Joueur A → droite, style Codex ivoire ── */
+  .ea{margin-left:auto!important;
+    background:rgba(253,250,244,.97)!important;
+    border-radius:16px 16px 4px 16px!important;
+    border-color:rgba(212,175,55,.35)!important;
+    box-shadow:0 2px 8px rgba(212,175,55,.1)!important}
+  /* ── IA/Adversaire B → gauche, style marbre gris ── */
+  .eb{margin-right:auto!important;
+    background:rgba(242,242,248,.97)!important;
+    border-radius:16px 16px 16px 4px!important;
+    border-color:rgba(120,120,140,.18)!important;
+    box-shadow:0 2px 8px rgba(80,80,100,.06)!important}
+  /* ── Masquer les métadonnées inutiles ── */
+  .etime,.etype{display:none!important}
+  .confidence-hide{display:none!important}
+  /* ── Barre d'entrée fixe en bas ── */
+  .vzone{
+    position:fixed!important;bottom:0!important;left:0!important;right:0!important;
+    z-index:80!important;padding:8px 12px env(safe-area-inset-bottom,8px)!important;
+    background:rgba(246,241,232,.98)!important;backdrop-filter:blur(14px)!important;
+    box-shadow:0 -2px 14px rgba(40,28,8,.1)!important;border-top:1px solid rgba(212,175,55,.2)!important
+  }
+  /* Mic button : plus grand sur mobile */
+  .mic{width:44px!important;height:44px!important;font-size:1.05rem!important}
+  /* Input + bouton envoi : hauteur tactile */
+  .man-inp{min-height:42px!important;font-size:15px!important;border-radius:22px!important;padding:9px 16px!important}
+  .man-row .btn{min-height:42px!important;border-radius:22px!important;padding:0 16px!important}
+  /* ── Indicateur micro actif ── */
+  .mic-live-bar{display:flex!important}
+}
+
+/* ── Indicateur niveau micro (masqué hors mobile) ── */
+.mic-live-bar{display:none;align-items:flex-end;gap:2px;height:14px;margin-left:4px}
+.mlb{width:3px;border-radius:2px;background:var(--B);transition:height .08s}
+.mlb:nth-child(1){animation:mlv1 .6s ease-in-out infinite}
+.mlb:nth-child(2){animation:mlv2 .6s ease-in-out infinite .12s}
+.mlb:nth-child(3){animation:mlv1 .6s ease-in-out infinite .24s}
+.mlb:nth-child(4){animation:mlv2 .6s ease-in-out infinite .1s}
+.mlb:nth-child(5){animation:mlv1 .6s ease-in-out infinite .2s}
+@keyframes mlv1{0%,100%{height:3px}50%{height:12px}}
+@keyframes mlv2{0%,100%{height:8px}50%{height:4px}}
 
 /* OBS CSS */
 `;
@@ -1215,47 +1359,67 @@ function BadgePill({elo}){
    analysis, and improvement advice.
    Used inside each argument entry card in the debate arena.
 ─────────────────────────────────────────────────────────────── */
+/* ── ArgScoreDisplay v2 — accordéon mobile ──────────────────────────────────
+ * • Score global toujours visible (ex : 7.4 / 10)
+ * • Confiance, type, horodatage : masqués
+ * • Critères + analyse + conseils : cachés sous [Voir l'analyse ▾]
+ * ──────────────────────────────────────────────────────────────────────── */
 function ArgScoreDisplay({entry,side}){
+  const [open,setOpen]=useState(false);
   const col=side==='A'?'var(--A)':'var(--B)';
   const hasScore=entry.overall_score!=null;
   const hasAnalysis=entry.analysis&&entry.analysis!=='AI fallback';
   const hasAdvice=entry.improvement_advice&&entry.improvement_advice!=='Support your claims with clearer reasoning.';
+  const hasDetail=!!(entry.scores||hasAnalysis||hasAdvice);
   if(!entry.scores&&!hasScore)return null;
+  // Note globale colorée selon performance
+  const scoreColor=hasScore?(+entry.overall_score>=7?'var(--G)':(+entry.overall_score>=5?col:'var(--B)')):col;
   return(
     <div style={{marginTop:6}}>
-      {/* Overall score badge */}
-      {hasScore&&(
-        <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:5}}>
-          <span style={{fontFamily:'var(--fH)',fontSize:'.92rem',color:col,lineHeight:1,letterSpacing:'.02em'}}>{(+entry.overall_score).toFixed(1)}</span>
-          <span style={{fontFamily:'var(--fM)',fontSize:'.48rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.08em'}}>/ 10</span>
-          {entry.confidence!=null&&(
-            <span style={{fontFamily:'var(--fM)',fontSize:'.48rem',color:'var(--muted)',marginLeft:3,opacity:.7}}>
-              · {Math.round(entry.confidence*100)}% confiance
+      {/* ── Ligne toujours visible : note + bouton accordéon ── */}
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        {hasScore&&(
+          <div style={{display:'flex',alignItems:'baseline',gap:3}}>
+            <span style={{fontFamily:'var(--fH)',fontSize:'.95rem',color:scoreColor,lineHeight:1,letterSpacing:'.02em'}}>
+              {(+entry.overall_score).toFixed(1)}
             </span>
+            <span style={{fontFamily:'var(--fM)',fontSize:'.46rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.08em'}}>/10</span>
+          </div>
+        )}
+        {hasDetail&&(
+          <button
+            onClick={()=>setOpen(o=>!o)}
+            style={{background:'none',border:'none',cursor:'pointer',padding:'2px 6px',
+              fontFamily:'var(--fM)',fontSize:'.52rem',color:'var(--muted)',
+              borderRadius:4,borderLeft:`1px solid var(--bd)`,marginLeft:2,
+              display:'flex',alignItems:'center',gap:3,lineHeight:1.2,
+            }}
+          >
+            {open?'Masquer ▴':'Voir l\'analyse ▾'}
+          </button>
+        )}
+      </div>
+      {/* ── Contenu accordéon ── */}
+      {open&&(
+        <div style={{marginTop:6,paddingTop:6,borderTop:'1px dashed var(--bd)'}}>
+          {entry.scores&&(
+            <div className="escores" style={{marginBottom:4}}>
+              {CRITERIA.map(c=>(
+                <span key={c.key} className="escr">{c.label.slice(0,3)} {entry.scores[c.key]?.toFixed(1)}</span>
+              ))}
+            </div>
+          )}
+          {hasAnalysis&&(
+            <p style={{fontFamily:'var(--fC)',fontSize:'.72rem',color:'var(--dim)',fontStyle:'italic',lineHeight:1.55,margin:'4px 0 0'}}>
+              {entry.analysis}
+            </p>
+          )}
+          {hasAdvice&&(
+            <p style={{fontFamily:'var(--fB)',fontSize:'.6rem',color:'var(--O)',lineHeight:1.5,margin:'4px 0 0',display:'flex',alignItems:'flex-start',gap:4}}>
+              <span style={{flexShrink:0}}>💡</span>{entry.improvement_advice}
+            </p>
           )}
         </div>
-      )}
-      {/* 5 criteria chips */}
-      {entry.scores&&(
-        <div className="escores">
-          {CRITERIA.map(c=>(
-            <span key={c.key} className="escr">{c.label.slice(0,3)} {entry.scores[c.key]?.toFixed(1)}</span>
-          ))}
-        </div>
-      )}
-      {/* AI analysis — 1-2 sentences */}
-      {hasAnalysis&&(
-        <p style={{fontFamily:'var(--fC)',fontSize:'.72rem',color:'var(--dim)',fontStyle:'italic',
-          lineHeight:1.55,margin:'5px 0 0',borderTop:'1px dashed var(--bd)',paddingTop:5}}>
-          {entry.analysis}
-        </p>
-      )}
-      {/* Improvement advice */}
-      {hasAdvice&&(
-        <p style={{fontFamily:'var(--fB)',fontSize:'.6rem',color:'var(--O)',lineHeight:1.5,margin:'3px 0 0',
-          display:'flex',alignItems:'flex-start',gap:4}}>
-          <span style={{flexShrink:0}}>💡</span>{entry.improvement_advice}
-        </p>
       )}
     </div>
   );
@@ -1415,9 +1579,39 @@ const pressureSide=Math.abs(tA-tB)>0.8?(tA<tB?'A':'B'):null;
 
   useEffect(()=>{if(bdRef.current)bdRef.current.scrollTop=bdRef.current.scrollHeight},[tx]);
 
-  const handleFinal=useCallback(async t=>{setInt('');if(!t||t.length<3)return;await submitEntry(t,mode==='offline'?actSide:mySide,true)},[mySide,actSide,mode]);
+  // ── Speech buffer — accumule les segments vocaux dans l'input ─────────────────
+  // L'IA n'analyse QUE quand l'utilisateur arrête le micro (ou clique Envoyer).
+  const speechBufRef=useRef('');
+  const MIC_MIN_CHARS=20; // seuil minimal pour déclencher l'analyse
+
+  // handleFinal : chaque segment reconnu → accumule dans l'input, PAS d'envoi IA
+  const handleFinal=useCallback(t=>{
+    setInt('');
+    if(!t||t.length<3)return;
+    const side=mode==='offline'?actSide:mySide;
+    const joined=(speechBufRef.current+' '+t).trim();
+    speechBufRef.current=joined;
+    if(side==='A')setManA(joined);else setManB(joined);
+  },[mySide,actSide,mode]);
+
   const handleInterim=useCallback(t=>setInt(t),[]);
-  const speech=useSpeech(handleFinal,handleInterim,msg=>setToast(msg));
+
+  // handleMicStop : appelé par useSpeech sur r.onend (= arrêt manuel du micro)
+  // → envoi IA UNIQUEMENT si buffer ≥ MIC_MIN_CHARS, sinon avertissement Oracle
+  const handleMicStop=useCallback(()=>{
+    const side=mode==='offline'?actSide:mySide;
+    const buf=speechBufRef.current.trim();
+    speechBufRef.current='';
+    if(buf.length>=MIC_MIN_CHARS){
+      if(side==='A')setManA('');else setManB('');
+      submitEntry(buf,side);
+    }else if(buf.length>0){
+      // Texte trop court : on le laisse dans l'input + avertissement discret
+      showToast('✦ L\'Oracle attend un argument plus consistant…','info');
+    }
+  },[mode,actSide,mySide,submitEntry]);
+
+  const speech=useSpeech(handleFinal,handleInterim,handleMicStop,msg=>setToast(msg));
 
   const poll=useCallback(async()=>{
     if(!code||mode==='bot'||mode==='offline')return;
@@ -1532,32 +1726,71 @@ const pressureSide=Math.abs(tA-tB)>0.8?(tA<tB?'A':'B'):null;
   // Entrée texte : uniquement côté A (humain) pour bot/online
   const activeInputSide = mode==='offline' ? actSide : 'A';
 
+  // ── Helpers visuels VS header ──────────────────────────────────────────────
+  const hpA=Math.min(100,Math.max(0,(tA/10)*100));
+  const hpB=Math.min(100,Math.max(0,(tB/10)*100));
+  const avatarText=n=>n?n.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase():'?';
+
   return(
     <div style={{display:'flex',flexDirection:'column',flex:1,overflow:'hidden'}}>
-      {/* TOP BAR */}
-      <div className="ph" style={{height:46,paddingLeft:16,paddingRight:16}}>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          {analyzing?<div className="chip chip-p"><div className="spin"/>IA…</div>:<div className="chip chip-g" style={{animation:'blink 1.5s infinite'}}>● Live</div>}
-          <div style={{fontFamily:'var(--fH)',fontSize:'1.1rem',letterSpacing:'.06em'}}>{fmt(elapsed)}</div>
-          <div className="chip chip-a" style={{fontSize:'.56rem'}}>{fmtObj.label} · {fmtObj.min}min</div>
-          {code&&<div className="chip">Salon <b style={{color:'var(--A)',letterSpacing:'.15em'}}>{code}</b></div>}
-          {mode==='bot'&&<div className="chip chip-p">🤖 vs {nameB}</div>}
+
+      {/* ══════════════════════════════════════════════════════════════
+          VS HEADER — sticky compact (avatars + jauges + scores)
+          Visible sur desktop et mobile, remplace l'ancienne barre .ph
+      ══════════════════════════════════════════════════════════════ */}
+      <div className="vs-hdr">
+        {/* Orateur A */}
+        <div className="vs-side vs-side-a" style={{flex:1}}>
+          <div className="vs-row">
+            <div className="vs-av" style={{borderColor:'var(--A)'}}>
+              {user?.avatar&&(user.avatar.startsWith('/')||user.avatar.startsWith('http'))
+                ?<img src={user.avatar} alt={nameA} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>e.target.style.display='none'}/>
+                :avatarText(nameA)}
+            </div>
+            <span className="vs-name" style={{color:'var(--A)'}}>{nameA.split(' ')[0]}</span>
+            <span className="vs-score-v vs-score-a">{tA.toFixed(1)}</span>
+          </div>
+          <div className="vs-hp" style={{marginLeft:34}}>
+            <div className="vs-hp-fill" style={{width:`${hpA}%`,background:'var(--A)'}}/>
+          </div>
         </div>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          {mode==='online'&&<button className="btn b-ghost b-sm" onClick={()=>setSO(true)}>🎬 OBS</button>}
-          <div className="chip" style={{maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontSize:'.55rem'}}>{topic}</div>
+
+        {/* Centre : phase + timer */}
+        <div className="vs-phase" style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+          <span style={{fontFamily:'var(--fH)',fontSize:'.55rem',letterSpacing:'.12em',color:'var(--muted)'}}>VS</span>
+          <span style={{fontFamily:'var(--fM)',fontSize:'.5rem',color:'var(--muted)'}}>{fmt(elapsed)}</span>
+          {analyzing&&<div className="spin" style={{width:8,height:8,borderWidth:1.5}}/>}
+        </div>
+
+        {/* Orateur B */}
+        <div className="vs-side vs-side-b" style={{flex:1}}>
+          <div className="vs-row vs-row-b">
+            <div className="vs-av" style={{borderColor:'var(--B)'}}>
+              {avatarText(nameB)}
+            </div>
+            <span className="vs-name" style={{color:'var(--B)',textAlign:'right'}}>{nameB.split(' ')[0]}</span>
+            <span className="vs-score-v vs-score-b">{tB.toFixed(1)}</span>
+          </div>
+          <div className="vs-hp" style={{marginRight:34}}>
+            <div className="vs-hp-fill" style={{width:`${hpB}%`,background:'var(--B)',marginLeft:'auto'}}/>
+          </div>
+        </div>
+
+        {/* Bouton Terminer (desktop) + OBS */}
+        <div style={{display:'flex',gap:6,flexShrink:0,marginLeft:8}}>
+          {mode==='online'&&<button className="btn b-ghost b-sm" onClick={()=>setSO(true)}>🎬</button>}
           {!isSpectator&&<button className="btn b-b b-sm" onClick={doEnd}>Terminer</button>}
         </div>
       </div>
 
-      {/* PHASE */}
+      {/* Phase + progress */}
       <PhaseBar phase={phase}/>
       {prog>0&&<div className="prog"><div className="prog-bar" style={{width:`${prog}%`}}/></div>}
 
       <div className="arena">
 
         {/* ═══ LEFT PANE — Orateur A (humain) ═══ */}
-        <div className={`pane ${speech.active&&!isSpectator&&activeInputSide==='A'?'recording':''} ${pressureSide==='A'?'prs-losing-pane':pressureSide==='B'?'prs-winning-glow':''}`} style={{position:'relative'}}>
+        <div className={`pane pane-chat ${speech.active&&!isSpectator&&activeInputSide==='A'?'recording':''} ${pressureSide==='A'?'prs-losing-pane':pressureSide==='B'?'prs-winning-glow':''}`} style={{position:'relative'}}>
           {pressureSide==='A'&&<div className="prs-red-tint" aria-hidden="true"/>}
           <div className="ph">
             <div className="ph-t" style={{color:'var(--A)'}}>
@@ -1574,9 +1807,12 @@ const pressureSide=Math.abs(tA-tB)>0.8?(tA<tB?'A':'B'):null;
             {leftTx.map(e=>(
               <ArgumentCard key={e.id} entry={e} side="A" name={nameA}
                 defeatedId={defeatedId}
+                analyzing={e.scores===null&&analyzing}
+                avatar={user?.avatar||null}
                 scoreDisplay={<ArgScoreDisplay entry={e} side="A"/>}/>
             ))}
             {analyzing&&activeInputSide==='A'&&<div className="typing"><div style={{display:'flex',gap:3}}>{[0,1,2].map(i=><div key={i} className="td"/>)}</div><div style={{fontFamily:'var(--fM)',fontSize:'.6rem',color:'var(--dim)',marginLeft:6}}>Analyse IA…</div></div>}
+            {analyzing&&activeInputSide==='A'&&leftTx.length>0&&<div className="oracle-waiting">✦ L'Oracle pèse vos arguments… ✦</div>}
           </div>
 
           {/* Zone de saisie — uniquement pour l'orateur A (humain) */}
@@ -1584,17 +1820,24 @@ const pressureSide=Math.abs(tA-tB)>0.8?(tA<tB?'A':'B'):null;
             <div className="vzone">
               <div className="vrow">
                 <button className={`mic ${speech.active?'mic-on':'mic-off'}`} onClick={speech.toggle}>{speech.active?'⏹':'🎙'}</button>
+                {/* Indicateur barres niveau micro (mobile uniquement via CSS) */}
+                {speech.active&&<div className="mic-live-bar">{[1,2,3,4,5].map(i=><div key={i} className="mlb" style={{height:Math.random()*10+3}}/>)}</div>}
                 <div style={{flex:1,minWidth:0}}>
                   {speech.active
-                    ?<div style={{fontFamily:'var(--fM)',fontSize:'.65rem',color:'var(--B)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>🔴 {interim||'En écoute…'}</div>
-                    :<div style={{fontFamily:'var(--fM)',fontSize:'.55rem',color:'var(--muted)'}}>Cliquez pour parler · {nameA.split(' ')[0]}</div>
+                    ?<div style={{fontFamily:'var(--fM)',fontSize:'.65rem',color:'var(--B)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                        🔴 {interim||manA||'En écoute… parlez librement'}
+                      </div>
+                    :<div style={{fontFamily:'var(--fM)',fontSize:'.55rem',color:'var(--muted)'}}>
+                        Micro · {nameA.split(' ')[0]}
+                        {manA.trim().length>=MIC_MIN_CHARS&&<span style={{color:'var(--G)',marginLeft:5}}>✓ Prêt à envoyer</span>}
+                      </div>
                   }
                 </div>
               </div>
               <div className="man-row">
                 <input
                   className="man-inp"
-                  placeholder={`Argument de ${nameA.split(' ')[0]}…`}
+                  placeholder={`Votre argument… (min ${MIN_ARG_LENGTH} car.)`}
                   value={manA}
                   onChange={e=>setManA(e.target.value)}
                   onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submitManual('A')}}}
@@ -1602,18 +1845,17 @@ const pressureSide=Math.abs(tA-tB)>0.8?(tA<tB?'A':'B'):null;
                 />
                 <button className="btn b-a b-sm" onClick={()=>submitManual('A')} disabled={analyzing||botThink||manA.trim().length<MIN_ARG_LENGTH}>↑</button>
               </div>
-              <div style={{display:'flex',justifyContent:'space-between',fontFamily:'var(--fM)',fontSize:'.52rem',marginTop:4}}>
-                <span style={{color:'var(--muted)'}}>Entrée pour envoyer</span>
-                <span style={{color:manA.trim().length>=MIN_ARG_LENGTH?'var(--G)':'var(--B)',fontWeight:manA.trim().length<MIN_ARG_LENGTH?600:400}}>
-                  {manA.trim().length} / {MIN_ARG_LENGTH} caractères minimum
+              <div style={{display:'flex',justifyContent:'flex-end',fontFamily:'var(--fM)',fontSize:'.52rem',marginTop:4}}>
+                <span style={{color:manA.trim().length>=MIN_ARG_LENGTH?'var(--G)':'var(--muted)'}}>
+                  {manA.trim().length}/{MIN_ARG_LENGTH}
                 </span>
               </div>
             </div>
           )}
         </div>
 
-        {/* ═══ CENTER PANE — Scores ═══ */}
-        <div className="pane">
+        {/* ═══ CENTER PANE — Scores (masqué sur mobile via .pane-scores) ═══ */}
+        <div className="pane pane-scores">
           <div className="ph"><div className="ph-t">Scores</div><div className="ph-m">Live</div></div>
           <ScorePanel tA={tA} tB={tB} nameA={nameA} nameB={nameB} sum={sum}/>
           <div className="crits">{CRITERIA.map(c=>{const a=sA[c.key]||5,b=sB[c.key]||5,s=a+b||1;return(<div key={c.key} className="crit"><div className="crit-lbl"><span>{c.label}</span><span className="crit-w">{(c.weight*100).toFixed(0)}%</span></div><div className="crit-row"><div className="cv cv-a">{a.toFixed(1)}</div><div className="cbar"><div className="cba" style={{width:`${(a/s)*100}%`}}/><div className="cbb" style={{width:`${(b/s)*100}%`}}/></div><div className="cv cv-b">{b.toFixed(1)}</div></div></div>)})}</div>
@@ -1650,9 +1892,11 @@ const pressureSide=Math.abs(tA-tB)>0.8?(tA<tB?'A':'B'):null;
             {rightTx.map(e=>(
               <ArgumentCard key={e.id} entry={e} side="B" name={nameB}
                 defeatedId={defeatedId}
+                analyzing={e.scores===null&&(analyzing||botThink)}
                 scoreDisplay={<ArgScoreDisplay entry={e} side="B"/>}/>
             ))}
             {botThink&&<div className="typing"><div style={{display:'flex',gap:3}}>{[0,1,2].map(i=><div key={i} className="td"/>)}</div><div style={{fontFamily:'var(--fM)',fontSize:'.6rem',color:'var(--dim)',marginLeft:6,display:'flex',alignItems:'center',gap:5}}><span>🤖</span>{nameB} réfléchit…</div></div>}
+            {(analyzing&&activeInputSide==='B'||botThink)&&rightTx.length>0&&<div className="oracle-waiting">✦ L'Oracle pèse vos arguments… ✦</div>}
           </div>
 
           {/* Zone saisie orateur B (offline uniquement) */}
@@ -1915,6 +2159,14 @@ function SharePanel({debateId,nA,nB,totalA,totalB,topic,winner,onCopy,onToast}){
 /* ── Main ReportScreen ───────────────────────────────────── */
 function ReportScreen({tx,vars,sA,sB,nA,nB,topic,elapsed,report,genRep,user,isTraining,botElo,format,onNewDebate,onProfile,onTrain,debateId,showToast,debateConfig}){
   const [activeTab,setActiveTab]=useState('analyse');
+  /* ── Son verdict Oracle : joué une seule fois quand le rapport est prêt ── */
+  const verdictSoundFired=useRef(false);
+  useEffect(()=>{
+    if(report&&!genRep&&!verdictSoundFired.current){
+      verdictSoundFired.current=true;
+      setTimeout(()=>playSound('/sounds/verdict.mp3',0.4),350);
+    }
+  },[report,genRep]);
   const totalA=gScore(sA),totalB=gScore(sB);
   const isDraw=Math.abs(totalA-totalB)<0.3;
   const isUserWin=!isDraw&&totalA>totalB;
@@ -2023,9 +2275,13 @@ function ReportScreen({tx,vars,sA,sB,nA,nB,topic,elapsed,report,genRep,user,isTr
 
             {/* Winner name */}
             <p style={{fontFamily:'var(--fC)',fontSize:'.82rem',color:'var(--muted)',fontStyle:'italic',margin:'0 0 10px'}}>Vainqueur du débat</p>
-            <h2 style={{fontFamily:'var(--fH)',fontSize:isDraw?'2rem':'2.6rem',letterSpacing:'.16em',color:isDraw?'var(--muted)':totalA>totalB?'var(--A)':'var(--B)',margin:'0 0 12px',lineHeight:1}}>
-              {isDraw?'MATCH NUL':report.winner?.toUpperCase()}
-            </h2>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:12}}>
+              {!isDraw&&<img src="/assets/icon_laurel.png" alt="" style={{width:28,height:28,objectFit:'contain',opacity:.9,filter:'sepia(1) saturate(4) hue-rotate(15deg)',transform:'scaleX(-1)'}}/>}
+              <h2 style={{fontFamily:'var(--fH)',fontSize:isDraw?'2rem':'2.6rem',letterSpacing:'.16em',color:isDraw?'var(--muted)':totalA>totalB?'var(--A)':'var(--B)',margin:'0 0 12px',lineHeight:1}}>
+                {isDraw?'MATCH NUL':report.winner?.toUpperCase()}
+              </h2>
+              {!isDraw&&<img src="/assets/icon_laurel.png" alt="" style={{width:28,height:28,objectFit:'contain',opacity:.9,filter:'sepia(1) saturate(4) hue-rotate(15deg)'}}/>}
+            </div>
 
             {/* Verdict badge */}
             {report.verdict&&(
@@ -2805,7 +3061,7 @@ export default function DialectixV6(){
         losses:user.losses+(won||draw?0:1),
         draws:user.draws+(draw?1:0),
         streak:won?(user.streak||0)+1:0,
-        xp:user.xp+Math.round(25+Math.max(0,deltaA)*0.6),
+        xp:user.xp+Math.round(25+Math.max(0,deltaA)*0.6), // XP_TITLE_CHECK ci-dessous
         totalArgs:(user.totalArgs||0)+tx.filter(e=>e.side==='A').length,
         bestLogic:Math.max(user.bestLogic||0,...tx.filter(e=>e.side==='A'&&e.scores?.logic).map(e=>e.scores.logic)),
         bestRebuttal:Math.max(user.bestRebuttal||0,...tx.filter(e=>e.side==='A'&&e.scores?.rebuttal).map(e=>e.scores.rebuttal)),
@@ -2814,6 +3070,15 @@ export default function DialectixV6(){
         // ── Peak ELO tracking (Feature 5) — safe additive field, never decreases ──
         peak_elo:Math.max(user.peak_elo||user.elo||1000, newRA),
       };
+      /* ── Détection montée de titre XP ── */
+      const oldXpTitle=getXpTitle(user.xp);
+      const newXpTitle=getXpTitle(updUser.xp);
+      if(oldXpTitle.label!==newXpTitle.label){
+        setTimeout(()=>{
+          playSound('/sounds/success.mp3',0.55);
+          showToast(`${newXpTitle.icon} Nouveau titre : ${newXpTitle.label} !`,'achievement');
+        },800);
+      }
       const newAch=checkAchievements(user,updUser);
       if(newAch.length>0){updUser.achievements=[...(user.achievements||[]),...newAch];newAch.forEach((id,i)=>{const a=ACHIEVEMENTS_DEF.find(x=>x.id===id);if(a)setTimeout(()=>showToast(`${a.icon} Achievement débloqué : ${a.name}`,'achievement'),i*1200)})}
       saveUser(updUser); // localStorage + sbUpsertProfile (via saveUser)
@@ -2923,8 +3188,8 @@ export default function DialectixV6(){
           🏰 Mon Académie
           {(()=>{try{const t=JSON.parse(localStorage.getItem('dx_tournament_alpha')||'null');if(t&&t.status==='active')return<span style={{marginLeft:5,background:'#E53935',color:'#fff',borderRadius:20,padding:'1px 6px',fontSize:'.44rem',fontWeight:700,verticalAlign:'middle',animation:'blink .9s infinite'}}>LIVE</span>;}catch{}return null;})()}
         </button>
-        <button className={`nl ${page==='rank'?'on':''}`} onClick={closeMenu(()=>setPage('rank'))}>🏆 Classement</button>
-        <button className={`nl ${page==='profile'?'on':''}`} onClick={closeMenu(()=>setPage('profile'))}>👤 Mon Profil</button>
+        <button className={`nl ${page==='rank'?'on':''}`} onClick={closeMenu(()=>{setPage('rank');setPhase('idle')})}>🏆 Classement</button>
+        <button className={`nl ${page==='profile'?'on':''}`} onClick={closeMenu(()=>{setPage('profile');setPhase('idle')})}>👤 Mon Profil</button>
         {isAdmin()&&<button className={`nl ${page==='admin-dashboard'?'on':''}`} onClick={closeMenu(()=>setPage('admin-dashboard'))} style={{color:'var(--O)',fontWeight:page==='admin-dashboard'?700:400}}>⚙️ Dashboard</button>}
       </div>
 
@@ -2934,13 +3199,16 @@ export default function DialectixV6(){
           <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',lineHeight:1.15,gap:0}}>
             <div style={{fontFamily:'var(--fH)',fontSize:'.9rem',color:'var(--Y)'}}>{user.elo} <span style={{fontSize:'.55rem',opacity:.7}}>ELO</span></div>
             <div style={{fontFamily:'var(--fM)',fontSize:'.48rem',color:'var(--muted)'}}>Niv.{user.level||1} · {user.xp||0} XP</div>
+            <div className="xp-title-badge">{(()=>{const t=getXpTitle(user.xp);return`${t.icon} ${t.label}`;})()}</div>
           </div>
         )}
         {user&&<BadgePill elo={user.elo}/>}
         {user&&user.streak>2&&<div style={{fontFamily:'var(--fM)',fontSize:'.6rem',color:'var(--O)',background:'rgba(160,90,44,.1)',border:'1px solid rgba(160,90,44,.25)',borderRadius:20,padding:'3px 10px'}}>🔥 {user.streak}</div>}
         {user?(
-          <div style={{width:30,height:30,borderRadius:'50%',border:`2px solid ${getBadge(user.elo).color}`,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'.85rem'}} onClick={()=>{setMenuOpen(false);setPage('profile')}}>
-            {user.avatar?<img src={user.avatar} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:<span>{user.name[0]}</span>}
+          <div style={{width:30,height:30,borderRadius:'50%',border:`2px solid ${getBadge(user.elo).color}`,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:'.85rem'}} onClick={()=>{setMenuOpen(false);setPhase('idle');setPage('profile')}}>
+            {user.avatar&&(user.avatar.startsWith('/')||user.avatar.startsWith('http'))
+              ?<img src={user.avatar} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+              :<span>{user.name[0]}</span>}
           </div>
         ):(
           <button className="btn b-google b-sm" onClick={doGoogleLogin}>
@@ -3354,10 +3622,28 @@ export default function DialectixV6(){
   };
 
   /* ─── PROFILE PAGE ─── */
+  /* Bustes grecs — placeholders remplaçables par de vraies images */
+  // Placeholders SVG — remplacer par buste_N.png quand les vraies images sont disponibles
+  const GREEK_BUSTS=[
+    {url:'/avatars/buste_1.png',label:'Socrate'},
+    {url:'/avatars/buste_2.png',label:'Hypatie'},
+    {url:'/avatars/buste_3.png',label:'Platon'},
+    {url:'/avatars/buste_4.png',label:'Aristote'},
+    {url:'/avatars/buste_5.png',label:'Cicéron'},
+    {url:'/avatars/buste_6.png',label:'Sénèque'},
+    {url:'/avatars/buste_7.png',label:'Marc Aurèle'},
+    {url:'/avatars/buste_8.png',label:'Épictète'},
+  ];
+
   const ProfilePage=()=>{
     const [editMode,setEditMode]=useState(false);
     const [editName,setEditName]=useState(user?.name||'');
     const [savingProfile,setSavingProfile]=useState(false);
+    const [showAvatarPicker,setShowAvatarPicker]=useState(false);
+    const [editBio,setEditBio]=useState(user?.bio||'');
+    const [editDoctrine,setEditDoctrine]=useState(user?.doctrine||'');
+    const [savingCodex,setSavingCodex]=useState(false);
+    const [graverSaved,setGraverSaved]=useState(false);
 
     if(!user)return(<div className="lock-screen"><div className="lock-icon">👤</div><div style={{fontFamily:'var(--fH)',fontSize:'1.5rem',letterSpacing:'.1em'}}>Profil joueur</div><div style={{fontFamily:'var(--fM)',fontSize:'.66rem',color:'var(--muted)',maxWidth:320,lineHeight:1.85,textAlign:'center'}}>Connectez-vous pour voir votre profil ELO, vos achievements et l'historique de vos débats.</div><button className="btn b-google b-lg" onClick={doGoogleLogin}>Se connecter avec Google</button><button className="btn b-ghost b-sm" style={{marginTop:8}} onClick={doLogin}>Connexion demo (sans Google)</button></div>);
 
@@ -3373,12 +3659,82 @@ export default function DialectixV6(){
       showToast('✅ Profil mis à jour !','info');
     };
 
+    const handleChooseAvatar=async(url)=>{
+      const upd={...user,avatar:url};
+      saveUser(upd);
+      try{await SB.from('profiles').update({avatar_url:url}).eq('id',user.id);}catch{}
+      setShowAvatarPicker(false);
+      showToast('🎭 Buste choisi !','info');
+    };
+
+    const handleSaveCodex=async()=>{
+      setSavingCodex(true);
+      const upd={...user,bio:editBio.trim(),doctrine:editDoctrine};
+      saveUser(upd);
+      try{await SB.from('profiles').update({bio:editBio.trim(),doctrine:editDoctrine}).eq('id',user.id);}catch{}
+      setSavingCodex(false);
+      setGraverSaved(true);
+      playSound('/sounds/parchment.mp3',0.5); // bruitage parchemin
+      setTimeout(()=>setGraverSaved(false),2500);
+    };
+
+    /* ── Radar Chart : valeurs dérivées des stats joueur ── */
+    const radarVals={
+      Logique:   Math.min(10, 4 + (user.wins/Math.max(user.debates,1))*6),
+      Pertinence:Math.min(10, 3 + Math.min(user.debates||0,20)*0.35),
+      Preuves:   Math.min(10, Math.max(1,(user.xp||0)/50)),
+      Réfutation:Math.min(10, 3 + ((user.elo||1000)-800)/80),
+      Clarté:    Math.min(10, 4 + (user.mvp_count||0)*0.8),
+    };
+    const radarLabels=['Logique','Pertinence','Preuves','Réfutation','Clarté'];
+    const radarAngles=radarLabels.map((_,i)=>-Math.PI/2+(2*Math.PI*i)/5);
+    const RR=66,CX=100,CY=100;
+    const radarPts=radarAngles.map((a,i)=>{
+      const r=(radarVals[radarLabels[i]]/10)*RR;
+      return `${CX+r*Math.cos(a)},${CY+r*Math.sin(a)}`;
+    }).join(' ');
+    const gridLevels=[2,5,8,10];
+    const DOCTRINES=['Stoïcien','Sceptique','Épicurien','Dialecticien','Pragmatiste','Sophiste','Idéaliste','Empiriste'];
+
     return(
-      <div className="page">
+      <div className="page codex-page">
         <div className="profile-head">
-          <div style={{width:64,height:64,borderRadius:'50%',border:`3px solid ${getBadge(user.elo).color}`,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.8rem',flexShrink:0,background:'var(--s2)'}}>
-            {user.avatar?<img src={user.avatar} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:<span>{user.name[0]}</span>}
+          {/* ── Avatar cliquable → galerie de bustes ── */}
+          <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:5,flexShrink:0}}>
+            <div
+              onClick={()=>setShowAvatarPicker(v=>!v)}
+              title="Changer de buste"
+              style={{width:64,height:64,borderRadius:'50%',border:`3px solid ${getBadge(user.elo).color}`,overflow:'hidden',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.8rem',background:'var(--s2)',cursor:'pointer',position:'relative',flexShrink:0}}
+            >
+              {user.avatar&&user.avatar.startsWith('/')
+                ?<img src={user.avatar} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                :<span>{user.name?.[0]||'?'}</span>
+              }
+            </div>
+            <div style={{fontFamily:'var(--fM)',fontSize:'.48rem',color:'var(--Y)',letterSpacing:'.08em',cursor:'pointer'}} onClick={()=>setShowAvatarPicker(v=>!v)}>🎭 Buste</div>
           </div>
+
+          {/* Galerie de bustes (conditionnelle) */}
+          {showAvatarPicker&&(
+            <div style={{position:'absolute',zIndex:50,background:'var(--s0)',border:'1px solid var(--bd)',borderRadius:14,padding:'14px 12px',boxShadow:'0 8px 32px rgba(0,0,0,.4)',top:80,left:12,right:12}}>
+              <div style={{fontFamily:'var(--fH)',fontSize:'.75rem',letterSpacing:'.12em',textTransform:'uppercase',color:'var(--Y)',marginBottom:12,textAlign:'center'}}>✦ Choisissez votre philosophe ✦</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+                {GREEK_BUSTS.map(({url,label})=>(
+                  <div key={url} onClick={()=>handleChooseAvatar(url)}
+                    style={{cursor:'pointer',textAlign:'center',borderRadius:10,padding:'7px 4px',
+                      border:user.avatar===url?'2px solid var(--Y)':'2px solid var(--bd)',
+                      background:user.avatar===url?'rgba(212,175,55,.1)':'var(--s2)',transition:'all .18s'}}>
+                    <div style={{width:'100%',aspectRatio:'1',borderRadius:8,background:'var(--s3)',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4,overflow:'hidden'}}>
+                      <img src={url} alt={label} style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:8}}
+                        onError={e=>{e.target.style.display='none';e.target.parentElement.textContent='🏛';}}/>
+                    </div>
+                    <div style={{fontFamily:'var(--fM)',fontSize:'.47rem',color:'var(--muted)',letterSpacing:'.04em'}}>{label}</div>
+                  </div>
+                ))}
+              </div>
+              <button className="btn b-ghost b-sm" onClick={()=>setShowAvatarPicker(false)} style={{marginTop:12,width:'100%'}}>Fermer ✕</button>
+            </div>
+          )}
           <div style={{flex:1}}>
             {/* Mode édition du nom */}
             {editMode?(
@@ -3398,6 +3754,12 @@ export default function DialectixV6(){
                 <button className="btn b-ghost b-sm" onClick={()=>{setEditMode(true);setEditName(user.name);}} style={{fontSize:'.6rem',padding:'3px 8px'}}>✏️ Modifier</button>
               </div>
             )}
+            {/* ── Titre XP — sous le nom ── */}
+            {(()=>{const t=getXpTitle(user.xp);return(
+              <div style={{display:'flex',alignItems:'center',gap:6,marginTop:4,marginBottom:2}}>
+                <span style={{fontFamily:'Georgia,serif',fontSize:'.72rem',fontStyle:'italic',color:'rgba(212,175,55,.9)',letterSpacing:'.04em'}}>{t.icon} {t.label}</span>
+              </div>
+            )})()}
             <div className="profile-handle">{user.email}</div>
             <div style={{display:'flex',alignItems:'center',gap:8,marginTop:6,flexWrap:'wrap'}}>
               <BadgePill elo={user.elo}/>
@@ -3409,18 +3771,152 @@ export default function DialectixV6(){
             <div className="pstat-row">
               {/* Original stats + extended profile stats (Feature 2) */}
               {[['ELO',user.elo,'var(--Y)'],['Débats',user.debates,''],['Victoires',user.wins,'var(--G)'],['Défaites',user.losses||0,'var(--B)'],['Taux',`${pct(user.wins,user.debates)}%`,'var(--A)'],['XP',user.xp,'var(--O)'],['MVP',user.mvp_count||0,'var(--P)']].map(([l,v,c])=>(
-                <div key={l} className="pstat"><div className="pstat-v" style={{color:c||'var(--txt)'}}>{v}</div><div className="pstat-l">{l}</div></div>
+                <div key={l} className="pstat">
+                  <div className="pstat-v" style={{color:c||'var(--txt)',display:'flex',alignItems:'center',gap:3}}>
+                    {l==='XP'&&<img src="/assets/icon_owl.png" alt="" style={{width:14,height:14,objectFit:'contain',opacity:.85,filter:'sepia(1) saturate(3) hue-rotate(15deg)'}}/>}
+                    {v}
+                  </div>
+                  <div className="pstat-l">{l}</div>
+                </div>
               ))}
             </div>
           </div>
         </div>
 
+        {/* ══════════════════════════════════════════════════════════
+            CODEX : IDENTITÉ — Bio + Doctrine du philosophe
+        ══════════════════════════════════════════════════════════ */}
+        <div className="codex-card">
+          <div className="codex-title">✦ Identité du Philosophe ✦</div>
+          <div style={{marginBottom:12}}>
+            <div style={{fontFamily:'Georgia,serif',fontSize:'.6rem',color:'#8b6914',letterSpacing:'.06em',fontStyle:'italic',marginBottom:6}}>École de pensée</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {DOCTRINES.map(d=>(
+                <button key={d} onClick={()=>setEditDoctrine(d)}
+                  style={{fontFamily:'var(--fM)',fontSize:'.58rem',letterSpacing:'.06em',padding:'4px 10px',borderRadius:20,cursor:'pointer',border:'1px solid',transition:'all .18s',
+                    background:editDoctrine===d?'rgba(212,175,55,.25)':'transparent',
+                    borderColor:editDoctrine===d?'#d4af37':'rgba(212,175,55,.3)',
+                    color:editDoctrine===d?'#8b6914':'var(--muted)'}}>
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontFamily:'Georgia,serif',fontSize:'.6rem',color:'#8b6914',letterSpacing:'.06em',fontStyle:'italic',marginBottom:6}}>Manifeste</div>
+            <textarea
+              value={editBio}
+              onChange={e=>setEditBio(e.target.value)}
+              placeholder="Votre vision du débat, votre méthode, vos convictions…"
+              maxLength={280}
+              rows={3}
+              style={{width:'100%',background:'rgba(255,252,240,.6)',border:'1px solid rgba(212,175,55,.3)',borderRadius:8,padding:'8px 10px',fontFamily:'var(--fM)',fontSize:'.65rem',color:'#2a1f0e',lineHeight:1.7,resize:'vertical',outline:'none',boxSizing:'border-box'}}
+            />
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:6}}>
+              <span style={{fontFamily:'var(--fM)',fontSize:'.48rem',color:'var(--muted)'}}>{editBio.length}/280</span>
+              <button className={`btn b-g b-sm${graverSaved?' graver-saved':''}`}
+                onClick={handleSaveCodex} disabled={savingCodex}
+                style={{background:'rgba(212,175,55,.2)',border:'1px solid rgba(212,175,55,.6)',color:'#8b6914',fontFamily:'var(--fH)',letterSpacing:'.08em',fontSize:'.58rem',transition:'all .3s'}}>
+                {savingCodex
+                  ?<><div className="spin" style={{borderColor:'#d4af37',borderTopColor:'transparent'}}/>…</>
+                  :graverSaved?'✦ Gravé dans le Codex !':'✒ Graver'}
+              </button>
+            </div>
+          </div>
+          {user.bio&&<div style={{fontFamily:'var(--fM)',fontSize:'.64rem',fontStyle:'italic',color:'#7a6a50',lineHeight:1.75,padding:'8px 0',borderTop:'1px solid rgba(212,175,55,.2)'}}>« {user.bio} »</div>}
+        </div>
+
+        {/* ══════════════════════════════════════════════════════════
+            CODEX : PHILOSOPHIQUE — Radar Chart 5 vertus
+        ══════════════════════════════════════════════════════════ */}
+        {(()=>{
+          /* icône pour chaque axe : Logique, Pertinence, Preuves, Réfutation, Clarté */
+          const RADAR_ICONS=[
+            '/assets/icon_column.png',
+            '/assets/icon_torch.png',
+            '/assets/icon_scroll.png',
+            '/assets/icon_olive.png',
+            '/assets/icon_owl.png',
+          ];
+          const ICON_SZ=16; // taille px dans le SVG viewBox
+          return(
+          <div className="codex-card">
+            <div className="codex-title">✦ Vertus Rhétoriques ✦</div>
+            <div style={{display:'flex',gap:20,alignItems:'center',flexWrap:'wrap'}}>
+              {/* ── SVG Radar Chart (200×200) ── */}
+              <svg viewBox="0 0 200 200" style={{width:200,minWidth:160,flex:'0 0 auto'}}>
+                {/* Grille polygonale */}
+                {gridLevels.map(lv=>{
+                  const r=(lv/10)*RR;
+                  const pts=radarAngles.map(a=>`${CX+r*Math.cos(a)},${CY+r*Math.sin(a)}`).join(' ');
+                  return <polygon key={lv} points={pts} fill="none" stroke="rgba(212,175,55,.22)" strokeWidth=".6"/>;
+                })}
+                {/* Lignes d'axes */}
+                {radarAngles.map((a,i)=>(
+                  <line key={i} x1={CX} y1={CY} x2={CX+RR*Math.cos(a)} y2={CY+RR*Math.sin(a)} stroke="rgba(212,175,55,.22)" strokeWidth=".6"/>
+                ))}
+                {/* Polygone de données — animé */}
+                <polygon className="radar-polygon" points={radarPts} fill="rgba(212,175,55,.18)" stroke="#d4af37" strokeWidth="1.8" strokeLinejoin="round"/>
+                {/* Points de données — animés */}
+                {radarAngles.map((a,i)=>{
+                  const r=(radarVals[radarLabels[i]]/10)*RR;
+                  return <circle key={i} className="radar-dot" cx={CX+r*Math.cos(a)} cy={CY+r*Math.sin(a)} r="3.5" fill="#d4af37"
+                    style={{animationDelay:`${i*0.08}s`}}/>;
+                })}
+                {/* Icônes PNG aux extrémités des axes */}
+                {radarAngles.map((a,i)=>{
+                  const lr=RR+22;
+                  const ix=CX+lr*Math.cos(a)-ICON_SZ/2;
+                  const iy=CY+lr*Math.sin(a)-ICON_SZ/2;
+                  return(
+                    <image key={i} href={RADAR_ICONS[i]}
+                      x={ix} y={iy} width={ICON_SZ} height={ICON_SZ}
+                      style={{filter:'sepia(1) saturate(3) hue-rotate(15deg)',opacity:.85}}/>
+                  );
+                })}
+                {/* Mini labels texte sous chaque icône */}
+                {radarAngles.map((a,i)=>{
+                  const lr=RR+34;
+                  return(
+                    <text key={i} x={CX+lr*Math.cos(a)} y={CY+lr*Math.sin(a)}
+                      textAnchor="middle" dominantBaseline="middle"
+                      fill="#8b6914" fontSize="6" fontFamily="Georgia,serif">
+                      {radarLabels[i]}
+                    </text>
+                  );
+                })}
+              </svg>
+              {/* ── Légende / barres de scores ── */}
+              <div style={{flex:1,minWidth:120}}>
+                {radarLabels.map((l,i)=>{
+                  const v=radarVals[l];
+                  return(
+                    <div key={l} style={{marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
+                      <img src={RADAR_ICONS[i]} alt="" style={{width:14,height:14,objectFit:'contain',flexShrink:0,filter:'sepia(1) saturate(3) hue-rotate(15deg)',opacity:.8}}/>
+                      <div style={{flex:1}}>
+                        <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+                          <span style={{fontFamily:'Georgia,serif',fontSize:'.57rem',color:'#8b6914',letterSpacing:'.04em'}}>{l}</span>
+                          <span style={{fontFamily:'var(--fH)',fontSize:'.62rem',color:'#d4af37'}}>{v.toFixed(1)}</span>
+                        </div>
+                        <div style={{height:4,borderRadius:2,background:'rgba(212,175,55,.15)',overflow:'hidden'}}>
+                          <div style={{height:'100%',width:`${v*10}%`,background:'linear-gradient(90deg,rgba(212,175,55,.5),#d4af37)',borderRadius:2,transition:'width .6s ease'}}/>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          );
+        })()}
+
         {/* ── REPUTATION BADGE (Feature 3) — percentile from leaderboard ── */}
         <ReputationBadge userId={user.id} userElo={user.elo} leaderboard={leaderboard}/>
 
         {/* RANK PROGRESS */}
-        <div className="card" style={{marginBottom:16}}>
-          <div style={{fontFamily:'var(--fM)',fontSize:'.58rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.12em',marginBottom:10}}>Progression de rang</div>
+        <div className="codex-card" style={{marginBottom:16}}>
+          <div className="codex-title">✦ Progression de Rang ✦</div>
           <RankBar elo={user.elo}/>
           {user.eloHistory.length>1&&<div style={{marginTop:14}}><EloSparkline history={user.eloHistory}/></div>}
           {/* ── Promotion Indicator (Feature 2) — points to next badge ── */}
@@ -3469,8 +3965,8 @@ export default function DialectixV6(){
         </div>}
 
         {/* ACADÉMIE */}
-        <div className="card" style={{marginBottom:16}}>
-          <div style={{fontFamily:'var(--fM)',fontSize:'.55rem',color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.1em',marginBottom:10}}>🏛 Académie</div>
+        <div className="codex-card" style={{marginBottom:16}}>
+          <div className="codex-title">🏛 Académie</div>
           {user.academyId&&academies.find(a=>a.id===user.academyId)?(
             <div style={{display:'flex',alignItems:'center',gap:12,padding:'9px 12px',background:'var(--Ag)',borderRadius:7,border:'1px solid rgba(44,74,110,.18)'}}>
               <div style={{fontSize:'1.6rem'}}>{academies.find(a=>a.id===user.academyId).icon}</div>
@@ -3504,7 +4000,11 @@ export default function DialectixV6(){
       {leaderboard.slice(0,10).map((p,i)=>(
         <div key={p.id} className={`hof-card ${i<3?'gold':''}`} onClick={()=>setViewedPlayer(user&&p.id===user.id?{...user,isMe:true}:{...p,isMe:false})} title='Voir le profil' style={{cursor:'pointer'}}>
           <div style={{fontFamily:'var(--fH)',fontSize:'1.8rem',width:44,textAlign:'center',color:i===0?'var(--Y)':i===1?'#c0c0c0':i===2?'#cd7f32':'var(--muted)'}}>{i+1}</div>
-          <div style={{width:44,height:44,borderRadius:'50%',background:'var(--s3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.2rem',flexShrink:0,border:`2px solid ${getBadge(p.elo).color}`}}>{p.avatar}</div>
+          <div style={{width:44,height:44,borderRadius:'50%',background:'var(--s3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.2rem',flexShrink:0,border:`2px solid ${getBadge(p.elo).color}`,overflow:'hidden'}}>
+            {p.avatar&&(p.avatar.startsWith('/')||p.avatar.startsWith('http'))
+              ?<img src={p.avatar} alt={p.name} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>e.target.style.display='none'}/>
+              :p.avatar||p.name?.[0]||'?'}
+          </div>
           <div style={{flex:1}}>
             <div style={{fontWeight:700,fontSize:'.88rem'}}>{p.name}</div>
             <div style={{display:'flex',gap:8,marginTop:4,alignItems:'center',flexWrap:'wrap'}}><BadgePill elo={p.elo}/><span style={{fontFamily:'var(--fM)',fontSize:'.58rem',color:'var(--muted)'}}>{p.debates} débats</span></div>
@@ -3737,7 +4237,8 @@ export default function DialectixV6(){
   );
 
   /* ═══ RENDER ═══ */
-  const showNav=phase==='idle';
+  /* showNav : idle + pages statiques toujours accessibles même hors débat */
+  const showNav=phase==='idle'||['profile','rank','hall','academies'].includes(page);
   const inDebate=phase==='debate';
   const inReport=phase==='report';
   const inWaiting=phase==='waiting';
