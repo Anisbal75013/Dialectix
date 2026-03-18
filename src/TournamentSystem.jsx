@@ -281,6 +281,8 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
   const [selectedStance, setSelectedStance]   = useState(null); // 'affirmation' | 'refutation'
   // ── Champion celebration modal ─────────────────────────────────────────────
   const [showChampionModal, setShowChampionModal] = useState(false);
+  // ── Contest cost warning ────────────────────────────────────────────────────
+  const [pendingContestMatchId, setPendingContestMatchId] = useState(null);
 
   // Sync tournament from localStorage whenever it updates
   const refreshTournament = useCallback(() => {
@@ -468,20 +470,27 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
     }
   }
 
-  // Joueur contesté → match passe en statut 'contested', alerte Admin
+  // Joueur contesté → affiche d'abord l'avertissement 50 XP, puis confirme
   function handleContestMatch(matchId) {
+    setPendingContestMatchId(matchId); // → ouvre la modale de confirmation
+  }
+
+  // Après confirmation du joueur (il accepte le coût de 50 XP)
+  function confirmContest() {
+    const matchId = pendingContestMatchId;
+    setPendingContestMatchId(null);
     const t = loadTournament();
     if (!t?.bracket) return;
     const updatedBracket = {
       ...t.bracket,
       matches: t.bracket.matches.map(m =>
-        m.id === matchId ? { ...m, status: 'contested' } : m
+        m.id === matchId ? { ...m, status: 'contested', contestedBy: user?.id } : m
       ),
     };
     const updated = { ...t, bracket: updatedBracket };
     saveTournament(updated);
     setTournament(updated);
-    showToast && showToast('⚖️ Verdict contesté — le Grand Architecte sera notifié.');
+    showToast && showToast('⚖️ Verdict contesté — le Grand Architecte sera notifié.', 'info');
     setActiveTab('bracket');
   }
 
@@ -517,7 +526,21 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
     const updated = { ...t, bracket: bracketFinalized };
     saveTournament(updated);
     setTournament(updated);
-    showToast && showToast(`✅ ${winner.name} confirmé — verdict finalisé.`, 'achievement');
+
+    // ── Coût de contestation : −50 XP si le contestataire perd ───────────────
+    // Si le verdict original est CONFIRMÉ (pas overridé) ET que le contestataire
+    // est le joueur actuel → pénalité 50 XP
+    const contestantLost = !isOverride && match.contestedBy && match.contestedBy === user?.id;
+    if (contestantLost && user && saveUser) {
+      const penalized = { ...user, xp: Math.max(0, (user.xp || 0) - 50) };
+      saveUser(penalized);
+      showToast && showToast('⚖️ Contestation rejetée — −50 XP. L\'Oracle avait raison.', 'error');
+    } else {
+      showToast && showToast(`✅ ${winner.name} confirmé — verdict finalisé.`, 'achievement');
+      if (isOverride) {
+        showToast && showToast('🔄 Verdict révisé par le Grand Architecte.', 'info');
+      }
+    }
   }
 
   // ── Weekly Topic handlers ──────────────────────────────────────────────────
@@ -2060,6 +2083,37 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
           </div>
         );
       })()}
+
+      {/* ══ Modale de confirmation de contestation ══ */}
+      {pendingContestMatchId && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',backdropFilter:'blur(6px)',zIndex:1100,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+          <div style={{background:'linear-gradient(160deg,#1a0a00 0%,#2C1A0E 100%)',border:'2px solid rgba(198,161,91,.55)',borderRadius:16,padding:'30px 28px',maxWidth:400,width:'100%',textAlign:'center',boxShadow:'0 24px 60px rgba(0,0,0,.5)'}}>
+            <div style={{fontSize:'2.2rem',marginBottom:12}}>⚖️</div>
+            <div style={{fontFamily:'var(--fH)',fontSize:'1.1rem',letterSpacing:'.1em',textTransform:'uppercase',color:'#C6A15B',marginBottom:12}}>
+              Contester le Verdict
+            </div>
+            <div style={{fontFamily:'var(--fM)',fontSize:'.72rem',color:'rgba(255,240,200,.75)',lineHeight:1.8,marginBottom:20}}>
+              Vous êtes sur le point de contester le verdict de l'Oracle.<br/>
+              <span style={{color:'#e88',fontWeight:700}}>Si votre contestation est rejetée, vous perdrez 50 XP.</span><br/>
+              <span style={{fontSize:'.62rem',color:'rgba(255,240,200,.45)',display:'block',marginTop:8}}>
+                Seule la décision du Grand Architecte est définitive.
+              </span>
+            </div>
+            <div style={{display:'flex',gap:12,justifyContent:'center'}}>
+              <button
+                onClick={()=>setPendingContestMatchId(null)}
+                style={{padding:'10px 20px',background:'rgba(255,255,255,.07)',color:'rgba(255,255,255,.65)',border:'1px solid rgba(255,255,255,.15)',borderRadius:8,fontFamily:'var(--fM)',fontSize:'.72rem',cursor:'pointer',letterSpacing:'.04em'}}>
+                Annuler
+              </button>
+              <button
+                onClick={confirmContest}
+                style={{padding:'10px 22px',background:'linear-gradient(135deg,#8C3A30,#6B2020)',color:'#fff',border:'1px solid rgba(255,80,60,.35)',borderRadius:8,fontFamily:'var(--fH)',fontSize:'.72rem',cursor:'pointer',letterSpacing:'.06em',textTransform:'uppercase',boxShadow:'0 4px 14px rgba(140,58,48,.35)'}}>
+                ⚔️ Contester (−50 XP si perdu)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -62,12 +62,14 @@ const GF=`@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;
 
 /* ── CONSTANTS ─────────────────────────────────────────────── */
 const CRITERIA=[
-  {key:'relevance',label:'Pertinence',weight:.25},
-  {key:'logic',    label:'Logique',   weight:.28},
-  {key:'evidence', label:'Preuves',   weight:.22},
-  {key:'rebuttal', label:'Réfutation',weight:.15},
-  {key:'clarity',  label:'Clarté',    weight:.10},
+  {key:'logic',    label:'Logique',   weight:.259},  // coeff 1.5 — raisonnement
+  {key:'evidence', label:'Preuves',   weight:.259},  // coeff 1.5 — bases factuelles
+  {key:'relevance',label:'Pertinence',weight:.172},  // coeff 1.0
+  {key:'rebuttal', label:'Réfutation',weight:.172},  // coeff 1.0
+  {key:'clarity',  label:'Clarté',    weight:.138},  // coeff 0.8 — expression
 ];
+/* Libellé alternatif "Preuves" en mode micro (oral) */
+const EVIDENCE_LABEL_MIC='Solidité des Prémisses';
 
 const BADGES=[
   {id:'disciple',    label:'Disciple',           cls:'bd-disc',  min:0,    max:899,  icon:'📖',color:'#8A7A60'},
@@ -457,29 +459,41 @@ async function mockGoogleLogin(){
 }
 
 /* ── AI CALLS ──────────────────────────────────────────────── */
-async function aiAnalyze(raw,side,name,topic,hist,phase){
+/* ─── Recalcul overall_score local avec les poids Dialectix v2 ───────────── */
+function applyDialectixWeights(s){
+  // s = {logic, evidence, relevance, rebuttal, clarity}  → each 0-10
+  const w={logic:.259,evidence:.259,relevance:.172,rebuttal:.172,clarity:.138};
+  const total=(s.logic||0)*w.logic+(s.evidence||0)*w.evidence+(s.relevance||0)*w.relevance+(s.rebuttal||0)*w.rebuttal+(s.clarity||0)*w.clarity;
+  return Math.min(10,Math.max(0,total/0.999)); // normalize (weights sum to 1.000)
+}
+
+async function aiAnalyze(raw,side,name,topic,hist,phase,opts={}){
   // callClaude now returns a structured score object — map it to the shape
   // expected by submitEntry (formalized, type, scores, var_event, commentary, strength)
   // and also carry the new fields (overall_score, analysis, improvement_advice, etc.)
   try{
-    const scored=await callClaude(raw,topic,700);
+    const scored=await callClaude(raw,topic,700,opts);
     if(!scored)return null;
+    const rawScores={relevance:scored.relevance,logic:scored.logic,evidence:scored.evidence,rebuttal:scored.rebuttal,clarity:scored.clarity};
+    // Recalcul local avec pondération Dialectix v2 (logique+preuves ×1.5, clarté ×0.8)
+    const weightedOverall=applyDialectixWeights(rawScores);
     return{
       formalized:raw,
       type:scored.argument_style||'argument',
-      scores:{relevance:scored.relevance,logic:scored.logic,evidence:scored.evidence,rebuttal:scored.rebuttal,clarity:scored.clarity},
+      scores:rawScores,
       var_event:scored.fallacies?.length>0
         ?{detected:true,type:scored.fallacies[0],negative:true,explanation:scored.fallacies.join(', '),impact_criterion:'logic',impact_delta:-0.5}
         :{detected:false},
       commentary:scored.analysis,
-      strength:scored.overall_score,
+      strength:weightedOverall,
       // ── new Claude scoring fields ──
-      overall_score:scored.overall_score,
+      overall_score:weightedOverall,        // ← pondéré Dialectix v2
       confidence:scored.confidence,
       analysis:scored.analysis,
       improvement_advice:scored.improvement_advice,
       strengths:scored.strengths||[],
       weaknesses:scored.weaknesses||[],
+      viaMic:opts.isMicMode||false,         // ← flag micro
     };
   }catch{return null}
 }
@@ -1404,9 +1418,10 @@ function ArgScoreDisplay({entry,side}){
         <div style={{marginTop:6,paddingTop:6,borderTop:'1px dashed var(--bd)'}}>
           {entry.scores&&(
             <div className="escores" style={{marginBottom:4}}>
-              {CRITERIA.map(c=>(
-                <span key={c.key} className="escr">{c.label.slice(0,3)} {entry.scores[c.key]?.toFixed(1)}</span>
-              ))}
+              {CRITERIA.map(c=>{
+                const lbl=(entry.viaMic&&c.key==='evidence')?EVIDENCE_LABEL_MIC:c.label;
+                return <span key={c.key} className="escr" title={lbl}>{lbl.slice(0,3)} {entry.scores[c.key]?.toFixed(1)}</span>;
+              })}
             </div>
           )}
           {hasAnalysis&&(
@@ -1604,7 +1619,7 @@ const pressureSide=Math.abs(tA-tB)>0.8?(tA<tB?'A':'B'):null;
     speechBufRef.current='';
     if(buf.length>=MIC_MIN_CHARS){
       if(side==='A')setManA('');else setManB('');
-      submitEntry(buf,side);
+      submitEntry(buf,side,{viaMic:true});
     }else if(buf.length>0){
       // Texte trop court : on le laisse dans l'input + avertissement discret
       showToast('✦ L\'Oracle attend un argument plus consistant…','info');
@@ -1626,16 +1641,19 @@ const pressureSide=Math.abs(tA-tB)>0.8?(tA<tB?'A':'B'):null;
   useEffect(()=>{if(mode==='online'){const iv=setInterval(poll,1400);return()=>clearInterval(iv)}},[mode,poll]);
 
   const MIN_ARG_LENGTH=80;
-  const submitEntry=useCallback(async(raw,side)=>{
+  // submitEntry : opts.viaMic=true quand l'entrée vient du micro
+  const submitEntry=useCallback(async(raw,side,opts={})=>{
     if(!raw.trim()||analyzing||botThink)return;
     const sName=side==='A'?nameA:nameB;
     setAn(true);setProg(10);
-    const entry={id:uid(),side,raw,formalized:raw,type:'argument',time:elapsed,scores:null,phase};
+    const entry={id:uid(),side,raw,formalized:raw,type:'argument',time:elapsed,scores:null,phase,viaMic:opts.viaMic||false};
     if(mode==='online'){const cur=await SG(`tx:${code}`)||[];const nTx=[...cur,entry];await SS(`tx:${code}`,nTx);setTx(nTx);txRef.current=nTx}
     else{setTx(p=>[...p,entry]);txRef.current=[...txRef.current,entry]}
     setProg(35);
+    // Injecte doctrine joueur + flag micro dans l'appel IA
+    const aiOpts={isMicMode:opts.viaMic||false,doctrine:user?.doctrine||''};
     try{
-      const result=await aiAnalyze(raw,side,sName,topic,txRef.current.slice(-5),phase);
+      const result=await aiAnalyze(raw,side,sName,topic,txRef.current.slice(-5),phase,aiOpts);
       setProg(82);
       if(result){
         const isDecisive=(result.overall_score??0)>=7.5;
@@ -1644,7 +1662,7 @@ const pressureSide=Math.abs(tA-tB)>0.8?(tA<tB?'A':'B'):null;
           overall_score:result.overall_score??null,confidence:result.confidence??null,
           analysis:result.analysis||null,improvement_advice:result.improvement_advice||null,
           strengths:result.strengths||[],weaknesses:result.weaknesses||[],
-          decisive:isDecisive};
+          decisive:isDecisive,viaMic:entry.viaMic||false};
         if(mode==='online'){const ft=await SG(`tx:${code}`)||[];const mt=ft.map(e=>e.id===entry.id?upd:e);await SS(`tx:${code}`,mt);setTx(mt);txRef.current=mt}
         else{setTx(p=>p.map(e=>e.id===entry.id?upd:e));txRef.current=txRef.current.map(e=>e.id===entry.id?upd:e)}
         if(side==='A')setSA(p=>applyScore(p,result.scores));else setSB(p=>applyScore(p,result.scores));
@@ -2738,6 +2756,31 @@ export default function DialectixV6(){
   const [platformStats,setPlatformStats]=useState({today:0,active:0,total:0});
   const [dailyTopic]=useState(DAILY_TOPICS[new Date().getDay()%DAILY_TOPICS.length]);
 
+  // ── NAVIGATION BACK BUTTON ─────────────────────────────────────────────────
+  // Intercepte le bouton retour du navigateur pour naviguer dans l'app
+  // au lieu de quitter la SPA.
+  useEffect(()=>{
+    // Empêche le navigateur de revenir en arrière en poussant toujours un état
+    window.history.pushState({page,phase},'');
+  },[page,phase]);
+
+  useEffect(()=>{
+    const handlePop=(e)=>{
+      // On intercepte : on pousse un nouvel état pour "annuler" le retour,
+      // puis on applique la navigation interne.
+      window.history.pushState({page,phase},'');
+      if(phase&&phase!=='idle'){
+        // Si débat en cours → revenir à idle (confirmation implicite)
+        setPhase('idle');
+      }else if(page&&page!=='home'){
+        setPage('home');
+      }
+      // Si déjà home+idle → on ne fait rien (rester dans l'app)
+    };
+    window.addEventListener('popstate',handlePop);
+    return()=>window.removeEventListener('popstate',handlePop);
+  },[page,phase]); // se rebranche à chaque changement de page/phase
+
   // ── INIT : charge le profil localStorage puis vérifie immédiatement la session Supabase.
   // Si l'email de la session active ne correspond pas à celui du profil stocké,
   // on efface le cache périmé pour forcer onAuthStateChange à reconstruire le bon profil.
@@ -3719,18 +3762,31 @@ export default function DialectixV6(){
             <div style={{position:'absolute',zIndex:50,background:'var(--s0)',border:'1px solid var(--bd)',borderRadius:14,padding:'14px 12px',boxShadow:'0 8px 32px rgba(0,0,0,.4)',top:80,left:12,right:12}}>
               <div style={{fontFamily:'var(--fH)',fontSize:'.75rem',letterSpacing:'.12em',textTransform:'uppercase',color:'var(--Y)',marginBottom:12,textAlign:'center'}}>✦ Choisissez votre philosophe ✦</div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
-                {GREEK_BUSTS.map(({url,label})=>(
+                {GREEK_BUSTS.map(({url,label},idx)=>{
+                  const isSelected=user.avatar===url;
+                  const BUST_EMOJI=['🏛','🔆','🌿','📜','🏺','🦉','⚖️','✨'];
+                  return(
                   <div key={url} onClick={()=>handleChooseAvatar(url)}
                     style={{cursor:'pointer',textAlign:'center',borderRadius:10,padding:'7px 4px',
-                      border:user.avatar===url?'2px solid var(--Y)':'2px solid var(--bd)',
-                      background:user.avatar===url?'rgba(212,175,55,.1)':'var(--s2)',transition:'all .18s'}}>
-                    <div style={{width:'100%',aspectRatio:'1',borderRadius:8,background:'var(--s3)',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4,overflow:'hidden'}}>
-                      <img src={url} alt={label} style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:8}}
-                        onError={e=>{e.target.style.display='none';e.target.parentElement.textContent='🏛';}}/>
+                      border:isSelected?'2px solid var(--Y)':'2px solid var(--bd)',
+                      background:isSelected?'rgba(212,175,55,.1)':'var(--s2)',transition:'all .18s',
+                      boxShadow:isSelected?'0 0 10px rgba(212,175,55,.35)':'none'}}>
+                    <div style={{width:'100%',aspectRatio:'1',borderRadius:8,background:'var(--s3)',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4,overflow:'hidden',position:'relative'}}>
+                      <img src={url} alt={label}
+                        style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:8,display:'block'}}
+                        onLoad={e=>{e.target.style.opacity='1';if(e.target.nextSibling)e.target.nextSibling.style.display='none';}}
+                        onError={e=>{e.target.style.display='none';if(e.target.nextSibling)e.target.nextSibling.style.display='flex';}}
+                      />
+                      {/* Placeholder visible si l'image ne charge pas */}
+                      <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+                        background:'linear-gradient(135deg,rgba(212,175,55,.12),rgba(212,175,55,.05))',
+                        fontFamily:'Georgia,serif',fontSize:'1.4rem',color:'rgba(212,175,55,.8)',borderRadius:8}}>
+                        {BUST_EMOJI[idx]||'🏛'}
+                      </div>
                     </div>
-                    <div style={{fontFamily:'var(--fM)',fontSize:'.47rem',color:'var(--muted)',letterSpacing:'.04em'}}>{label}</div>
+                    <div style={{fontFamily:'var(--fM)',fontSize:'.47rem',color:isSelected?'var(--Y)':'var(--muted)',letterSpacing:'.04em',fontStyle:isSelected?'italic':'normal'}}>{label}</div>
                   </div>
-                ))}
+                );})}
               </div>
               <button className="btn b-ghost b-sm" onClick={()=>setShowAvatarPicker(false)} style={{marginTop:12,width:'100%'}}>Fermer ✕</button>
             </div>
@@ -3839,9 +3895,26 @@ export default function DialectixV6(){
             '/assets/icon_owl.png',
           ];
           const ICON_SZ=16; // taille px dans le SVG viewBox
+          /* Score moyen de l'Agora (benchmark communautaire) */
+          const AVG_SCORES={Logique:5.4,Pertinence:5.8,Preuves:4.6,Réfutation:4.9,Clarté:6.1};
+          const avgPts=radarAngles.map((a,i)=>{
+            const r=(AVG_SCORES[radarLabels[i]]||5)/10*RR;
+            return `${CX+r*Math.cos(a)},${CY+r*Math.sin(a)}`;
+          }).join(' ');
           return(
           <div className="codex-card">
             <div className="codex-title">✦ Vertus Rhétoriques ✦</div>
+            {/* Légende benchmark */}
+            <div style={{display:'flex',gap:16,marginBottom:10,flexWrap:'wrap'}}>
+              <div style={{display:'flex',alignItems:'center',gap:5}}>
+                <div style={{width:14,height:3,background:'#d4af37',borderRadius:2}}/>
+                <span style={{fontFamily:'var(--fM)',fontSize:'.5rem',color:'#8b6914'}}>Vous</span>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:5}}>
+                <div style={{width:14,height:3,background:'rgba(120,120,120,.5)',borderRadius:2,borderTop:'1px dashed rgba(120,120,120,.7)'}}/>
+                <span style={{fontFamily:'var(--fM)',fontSize:'.5rem',color:'var(--muted)'}}>Moyenne Agora</span>
+              </div>
+            </div>
             <div style={{display:'flex',gap:20,alignItems:'center',flexWrap:'wrap'}}>
               {/* ── SVG Radar Chart (200×200) ── */}
               <svg viewBox="0 0 200 200" style={{width:200,minWidth:160,flex:'0 0 auto'}}>
@@ -3855,6 +3928,13 @@ export default function DialectixV6(){
                 {radarAngles.map((a,i)=>(
                   <line key={i} x1={CX} y1={CY} x2={CX+RR*Math.cos(a)} y2={CY+RR*Math.sin(a)} stroke="rgba(212,175,55,.22)" strokeWidth=".6"/>
                 ))}
+                {/* ── Silhouette Moyenne Agora (grise, en dessous) ── */}
+                <polygon points={avgPts}
+                  fill="rgba(150,150,150,.07)"
+                  stroke="rgba(140,130,110,.45)"
+                  strokeWidth="1"
+                  strokeDasharray="3 2"
+                  strokeLinejoin="round"/>
                 {/* Polygone de données — animé */}
                 <polygon className="radar-polygon" points={radarPts} fill="rgba(212,175,55,.18)" stroke="#d4af37" strokeWidth="1.8" strokeLinejoin="round"/>
                 {/* Points de données — animés */}

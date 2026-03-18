@@ -19,13 +19,18 @@ const BACKEND_URL         = import.meta.env.VITE_BACKEND_URL || 'http://localhos
 const TIMEOUT_MS          = 12_000;
 const MIN_ARGUMENT_LENGTH = 20;
 
-/* ─── WEIGHTS (reference copy — backend owns recalculation) ─────────────── */
+/* ─── WEIGHTS — Pondération équilibrée Dialectix v2 ────────────────────────
+ *  Logique & Preuves  → coeff 1.5  (raisonnement solide avant tout)
+ *  Pertinence & Réfutation → coeff 1.0  (standard)
+ *  Clarté             → coeff 0.8  (évite de trop favoriser le "beau parleur")
+ *  Normalisés sur 5.8 (= 1.5+1.5+1.0+1.0+0.8)
+ * ─────────────────────────────────────────────────────────────────────────── */
 export const WEIGHTS = {
-  logic:     0.28,
-  relevance: 0.25,
-  evidence:  0.22,
-  rebuttal:  0.15,
-  clarity:   0.10,
+  logic:     0.259,  // 1.5 / 5.8
+  evidence:  0.259,  // 1.5 / 5.8
+  relevance: 0.172,  // 1.0 / 5.8
+  rebuttal:  0.172,  // 1.0 / 5.8
+  clarity:   0.138,  // 0.8 / 5.8
 };
 
 /* ─── LOCAL FALLBACK ─────────────────────────────────────────────────────── */
@@ -79,15 +84,27 @@ const TOO_SHORT_SCORE = {
  * @param {string} topic      – The debate topic (improves judge accuracy)
  * @param {number} _maxTokens – Ignored (backend controls token budget)
  */
-export async function callClaude(argument, topic = '', _maxTokens = 800) {
+/**
+ * callClaude(argument, topic?, _maxTokens?, opts?)
+ *
+ * opts = {
+ *   doctrine?:  string  — École de pensée du joueur (Stoïcien, Sceptique…)
+ *                         Transmise au backend pour ajuster le ton du juge.
+ *   isMicMode?: boolean — Si true, "Preuves" → "Solidité des Prémisses"
+ *                         (backend peut adapter son évaluation en conséquence)
+ * }
+ */
+export async function callClaude(argument, topic = '', _maxTokens = 800, opts = {}) {
   const trimmed = (argument || '').trim();
+  const { doctrine = '', isMicMode = false } = opts;
 
   if (trimmed.length < MIN_ARGUMENT_LENGTH) {
     console.log(`[CLAUDE] Too short (${trimmed.length} < ${MIN_ARGUMENT_LENGTH}) — skipping backend`);
     return TOO_SHORT_SCORE;
   }
 
-  console.log('[CLAUDE] → /ai/judge | arg:', trimmed.slice(0, 100) + (trimmed.length > 100 ? '…' : ''));
+  console.log('[CLAUDE] → /ai/judge | arg:', trimmed.slice(0, 100) + (trimmed.length > 100 ? '…' : ''),
+    doctrine ? `| doctrine: ${doctrine}` : '', isMicMode ? '| micMode' : '');
 
   const controller = new AbortController();
   const timeoutId  = setTimeout(() => {
@@ -100,7 +117,13 @@ export async function callClaude(argument, topic = '', _maxTokens = 800) {
       method:  'POST',
       signal:  controller.signal,
       headers: { 'content-type': 'application/json' },
-      body:    JSON.stringify({ argument: trimmed, topic: topic || '' }),
+      body:    JSON.stringify({
+        argument:   trimmed,
+        topic:      topic || '',
+        doctrine:   doctrine || '',     // École de pensée → ajustement du juge
+        isMicMode:  isMicMode || false, // Mode oral → critère Preuves adapté
+        weights:    WEIGHTS,            // Poids normalisés → recalcul backend
+      }),
     });
 
     clearTimeout(timeoutId);
