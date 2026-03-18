@@ -433,7 +433,6 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
   }
 
   function handleBracketWinner(matchId, winner) {
-    if (!isAdmin()) return;
     const t = loadTournament();
     if (!t?.bracket) return;
 
@@ -441,16 +440,27 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
     const match = t.bracket.matches.find(m => m.id === matchId);
     const loser  = match?.player1?.id === winner?.id ? match?.player2 : match?.player1;
 
+    // ── Autorisation : Admin OU match impliquant un BYE/bot, OU joueur auto-déclare ──
+    // Un joueur non-admin peut résoudre son propre match si :
+    //   (a) l'adversaire est un BYE (slot vide, isBye: true)
+    //   (b) l'adversaire est un bot IA (id commence par 'bot_' ou 'bye_')
+    const isByeMatch = loser?.isBye || /^(bye_|bot_)/.test(loser?.id || '');
+    const isPlayerSelf = user && (match?.player1?.id === user.id || match?.player2?.id === user.id);
+    if (!isAdmin() && !(isByeMatch && isPlayerSelf)) return;
+
     // ── AI Verdict ────────────────────────────────────────────────────────────
     const aiVerdict = generateMatchVerdict(winner, loser, match?.constraintMode, t.weeklyTopic);
 
     const newBracket = advanceBracket(t.bracket, matchId, winner);
 
+    // Matchs vs BYE/IA → auto-finalisé (pas besoin d'attente admin)
+    const matchStatus = isByeMatch ? 'finalized' : 'ai_judged';
+
     // Attach verdict + status to the match
     const bracketWithVerdict = {
       ...newBracket,
       matches: newBracket.matches.map(m =>
-        m.id === matchId ? { ...m, status: 'ai_judged', aiVerdict } : m
+        m.id === matchId ? { ...m, status: matchStatus, aiVerdict } : m
       ),
     };
 
@@ -1698,15 +1708,21 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
                                   </button>
                                 </div>
                               )}
-                              {/* Auto-advance BYE */}
-                              {isAdmin() && !match.played && (isBye1 || isBye2) && (match.player1 || match.player2) && (
-                                <button className="btn b-ghost b-sm" onClick={() => {
-                                  const winner = isBye1 ? match.player2 : match.player1;
-                                  if (winner) handleBracketWinner(match.id, winner);
-                                }} style={{ width: '100%', justifyContent: 'center', fontSize: '.50rem', marginTop: 6 }}>
-                                  BYE → avancer
-                                </button>
-                              )}
+                              {/* Auto-advance BYE — visible pour admin ET pour le joueur lui-même */}
+                              {!match.played && (isBye1 || isBye2) && (match.player1 || match.player2) && (() => {
+                                const realWinner = isBye1 ? match.player2 : match.player1;
+                                const isMyMatch = user && (match.player1?.id === user.id || match.player2?.id === user.id);
+                                if (!isAdmin() && !isMyMatch) return null;
+                                return (
+                                  <button className="btn b-g b-sm" onClick={() => {
+                                    if (realWinner) handleBracketWinner(match.id, realWinner);
+                                  }} style={{ width: '100%', justifyContent: 'center', fontSize: '.52rem', marginTop: 6,
+                                    background: 'linear-gradient(135deg,rgba(58,110,82,.12),rgba(44,74,110,.1))',
+                                    border: '1px solid rgba(58,110,82,.4)', color: 'var(--G)' }}>
+                                    ⚡ Victoire automatique (BYE) — Finaliser
+                                  </button>
+                                );
+                              })()}
 
                               {/* ── Verdict IA ────────────────────────────────── */}
                               {match.aiVerdict && (

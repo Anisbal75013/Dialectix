@@ -580,7 +580,7 @@ ${GF}
 :root{${[
   '--bg:#F6F1E8','--s0:#F3EDE0','--s1:#EFE8D8','--s2:#EAE0CC','--s3:#E2D5BB','--s4:#D8C9A8',
   '--bd:#D4C8A8','--bd2:#C2B48A','--bd3:#A89868',
-  '--txt:#1A1A1A','--dim:#5C4F38','--muted:#8A7860',
+  '--txt:#1A1208','--dim:#3A2D1A','--muted:#7A6A50',
   '--A:#2C4A6E','--B:#8C3A30','--G:#3A6E52','--Y:#C6A15B','--O:#A05A2C','--P:#5A3A6E','--T2:#2C6E5A',
   '--Ag:rgba(44,74,110,.08)','--Bg:rgba(140,58,48,.08)','--Gg:rgba(58,110,82,.08)',
   '--glA:0 2px 12px rgba(44,74,110,.14)','--glB:0 2px 12px rgba(140,58,48,.14)','--glG:0 2px 12px rgba(58,110,82,.12)',
@@ -659,6 +659,23 @@ input,button,textarea,select{font-family:inherit}
 .prog-bar{height:100%;background:linear-gradient(90deg,var(--A),var(--G));transition:width .4s ease}
 .xp-bar{height:4px;background:var(--bd);border-radius:3px;overflow:hidden}
 .xp-fill{height:100%;background:linear-gradient(90deg,var(--Y),var(--O));border-radius:3px;transition:width .8s cubic-bezier(.4,0,.2,1)}
+
+/* ── TYPOGRAPHIE ANTIQUE — lisibilité parchemin ── */
+/* Titres Cinzel sur fonds parchemin */
+.antique-title{font-family:'Cinzel',Georgia,serif;letter-spacing:.14em;color:#1A0E04;line-height:1.2}
+/* Texte courant sur fond clair */
+.antique-body{font-family:'Cormorant Garamond',Georgia,serif;font-size:.95rem;color:#2a1a06;line-height:1.8}
+/* Argument / citation en italique */
+.antique-quote{font-family:'Cormorant Garamond',Georgia,serif;font-style:italic;color:#2a1a06;line-height:1.75}
+/* Séparateur fin doré */
+.gold-divider{height:1px;background:linear-gradient(90deg,transparent,rgba(212,175,55,.55),transparent);margin:14px 0}
+/* Encart verdict Oracle */
+.oracle-verdict{background:linear-gradient(135deg,rgba(198,161,91,.1),rgba(44,74,110,.06));border:1px solid rgba(212,175,55,.4);border-left:3px solid #D4AF37;border-radius:10px;padding:14px 16px}
+.oracle-verdict-title{font-family:'Cinzel',Georgia,serif;font-size:.72rem;letter-spacing:.12em;color:#8b6914;margin-bottom:8px}
+.oracle-verdict-text{font-family:'Cormorant Garamond',Georgia,serif;font-size:.92rem;font-style:italic;color:#2a1a06;line-height:1.7}
+/* Argument card parchemin */
+.parch-card{background:linear-gradient(145deg,#FDFAF4,#F5EDD8);border:1px solid rgba(212,175,55,.25);border-radius:10px;padding:14px 16px;box-shadow:0 1px 4px rgba(40,20,0,.06)}
+.parch-card+.parch-card{border-top:none;border-radius:0 0 10px 10px;margin-top:-1px}
 
 /* ── TOAST ── */
 .toast{position:fixed;top:62px;left:50%;transform:translateX(-50%);z-index:700;background:#FDFAF4;border:1px solid var(--bd2);border-radius:8px;padding:10px 20px;font-family:var(--fB);font-size:.72rem;font-weight:500;color:var(--txt);animation:toastIn .25s ease;box-shadow:var(--sh2);display:flex;align-items:center;gap:8px;pointer-events:none;white-space:nowrap}
@@ -2292,21 +2309,21 @@ function ReportScreen({tx,vars,sA,sB,nA,nB,topic,elapsed,report,genRep,user,isTr
             <div style={{position:'absolute',bottom:0,left:'40%',right:'40%',height:1,background:`linear-gradient(90deg,transparent,${vm.col}44,transparent)`}}/>
 
             {/* Winner name */}
-            <p style={{fontFamily:'var(--fC)',fontSize:'.82rem',color:'var(--muted)',fontStyle:'italic',margin:'0 0 10px'}}>Vainqueur du débat</p>
+            <p style={{fontFamily:'var(--fC)',fontSize:'.85rem',color:'#7a6a50',fontStyle:'italic',margin:'0 0 10px'}}>⚖️ Vainqueur du débat</p>
             <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:12}}>
-              {!isDraw&&<img src="/assets/icon_laurel.png" alt="" style={{width:28,height:28,objectFit:'contain',opacity:.9,filter:'sepia(1) saturate(4) hue-rotate(15deg)',transform:'scaleX(-1)'}}/>}
-              <h2 style={{fontFamily:'var(--fH)',fontSize:isDraw?'2rem':'2.6rem',letterSpacing:'.16em',color:isDraw?'var(--muted)':totalA>totalB?'var(--A)':'var(--B)',margin:'0 0 12px',lineHeight:1}}>
+              {!isDraw&&<img src="/assets/icon_laurel.png" alt="" style={{width:32,height:32,objectFit:'contain',opacity:.95,filter:'sepia(1) saturate(4) hue-rotate(15deg)',transform:'scaleX(-1)'}}/>}
+              <h2 className="antique-title" style={{fontSize:isDraw?'2rem':'2.8rem',color:isDraw?'var(--muted)':totalA>totalB?'var(--A)':'var(--B)',margin:'0 0 12px'}}>
                 {isDraw?'MATCH NUL':report.winner?.toUpperCase()}
               </h2>
-              {!isDraw&&<img src="/assets/icon_laurel.png" alt="" style={{width:28,height:28,objectFit:'contain',opacity:.9,filter:'sepia(1) saturate(4) hue-rotate(15deg)'}}/>}
+              {!isDraw&&<img src="/assets/icon_laurel.png" alt="" style={{width:32,height:32,objectFit:'contain',opacity:.95,filter:'sepia(1) saturate(4) hue-rotate(15deg)'}}/>}
             </div>
 
             {/* Verdict badge */}
             {report.verdict&&(
-              <div style={{display:'inline-flex',alignItems:'center',gap:8,padding:'6px 18px',background:vm.bg,border:`1px solid ${vm.bdr}`,borderRadius:24,marginBottom:20}}>
-                <div style={{width:6,height:6,borderRadius:'50%',background:vm.col}}/>
-                <span style={{fontFamily:'var(--fH)',fontSize:'.75rem',letterSpacing:'.12em',color:vm.col}}>{report.verdict}</span>
-                <span style={{fontFamily:'var(--fC)',fontSize:'.7rem',color:'var(--muted)',fontStyle:'italic'}}>{vm.desc}</span>
+              <div style={{display:'inline-flex',alignItems:'center',gap:8,padding:'7px 20px',background:vm.bg,border:`1px solid ${vm.bdr}`,borderRadius:24,marginBottom:20}}>
+                <div style={{width:7,height:7,borderRadius:'50%',background:vm.col}}/>
+                <span style={{fontFamily:'Cinzel,Georgia,serif',fontSize:'.72rem',letterSpacing:'.14em',color:vm.col}}>{report.verdict}</span>
+                <span style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:'.75rem',color:'#5a4010',fontStyle:'italic'}}>{vm.desc}</span>
               </div>
             )}
 
@@ -2325,17 +2342,20 @@ function ReportScreen({tx,vars,sA,sB,nA,nB,topic,elapsed,report,genRep,user,isTr
             </div>
 
             {/* Gap & Winner reason */}
-            {report.margin&&<p style={{fontFamily:'var(--fM)',fontSize:'.6rem',color:'var(--muted)',marginBottom:12}}>Écart · <b style={{color:'var(--dim)'}}>{report.margin}</b></p>}
-            {report.winner_reason&&<p style={{fontFamily:'var(--fC)',fontSize:'.92rem',color:'var(--dim)',lineHeight:1.78,maxWidth:580,margin:'0 auto',fontStyle:'italic'}}>« {report.winner_reason} »</p>}
+            {report.margin&&<p style={{fontFamily:'var(--fM)',fontSize:'.6rem',color:'#7a6a50',marginBottom:10}}>Écart · <b style={{color:'#3a2d1a'}}>{report.margin}</b></p>}
+            {report.winner_reason&&(
+              <div className="gold-divider" style={{maxWidth:400,margin:'0 auto 12px'}}/>
+            )}
+            {report.winner_reason&&<p className="antique-quote" style={{fontSize:'.95rem',maxWidth:560,margin:'0 auto 12px'}}>« {report.winner_reason} »</p>}
 
-            {/* AI scoring verdict — based on per-argument overall_score averages */}
-            <div style={{marginTop:16,padding:'10px 18px',background:'rgba(44,74,110,.05)',border:'1px solid rgba(44,74,110,.15)',borderRadius:8,display:'inline-flex',alignItems:'center',gap:8}}>
-              <span style={{fontSize:'.8rem'}}>🤖</span>
-              <span style={{fontFamily:'var(--fB)',fontSize:'.7rem',color:'var(--dim)',fontWeight:500}}>{aiVerdictText}</span>
+            {/* Encart verdict Oracle immédiat */}
+            <div className="oracle-verdict" style={{marginTop:16,display:'inline-block',textAlign:'left',maxWidth:520}}>
+              <div className="oracle-verdict-title">🔮 L'Oracle a tranché</div>
+              <p className="oracle-verdict-text">{aiVerdictText}</p>
               {scoredA.length>0&&(
-                <span style={{fontFamily:'var(--fM)',fontSize:'.55rem',color:'var(--muted)',marginLeft:4}}>
-                  · {nA} {avgOverallA.toFixed(1)} vs {nB} {avgOverallB.toFixed(1)}
-                </span>
+                <div style={{fontFamily:'var(--fM)',fontSize:'.52rem',color:'#8b6914',marginTop:6,letterSpacing:'.06em'}}>
+                  Scores moyens · {nA} <b>{avgOverallA.toFixed(1)}</b> vs {nB} <b>{avgOverallB.toFixed(1)}</b>
+                </div>
               )}
             </div>
 
@@ -2571,22 +2591,25 @@ function ReportScreen({tx,vars,sA,sB,nA,nB,topic,elapsed,report,genRep,user,isTr
         {/* ══ TAB: TRANSCRIPTION ══════════════════════════════════ */}
         {activeTab==='transcription'&&(
           <RSection title={`Transcription Intégrale`} icon="📜" sub={`${tx.length} arguments · Verbatim et formalisations académiques`}>
-            <div style={{background:'#FDFAF4',border:'1px solid var(--bd)',borderRadius:10,overflow:'hidden',boxShadow:'var(--sh)'}}>
+            <div style={{background:'#FDFAF4',border:'1px solid rgba(212,175,55,.2)',borderRadius:10,overflow:'hidden',boxShadow:'var(--sh)'}}>
               {tx.map((e,i)=>(
-                <div key={e.id} style={{display:'flex',gap:13,padding:'12px 16px',borderBottom:i<tx.length-1?'1px solid var(--bd)':'none',borderLeft:`4px solid ${e.side==='A'?'var(--A)':'var(--B)'}`,background:i%2===0?'transparent':'rgba(40,28,8,.012)'}}>
-                  <div style={{flexShrink:0,width:70,display:'flex',flexDirection:'column',gap:3}}>
+                <div key={e.id} style={{display:'flex',gap:14,padding:'14px 18px',
+                  borderBottom:i<tx.length-1?'1px solid rgba(212,175,55,.15)':'none',
+                  borderLeft:`3px solid ${e.side==='A'?'var(--A)':'var(--B)'}`,
+                  background:e.side==='A'?'rgba(44,74,110,.025)':'rgba(140,58,48,.022)'}}>
+                  <div style={{flexShrink:0,width:72,display:'flex',flexDirection:'column',gap:3}}>
                     <span className={`ebadge ${e.side==='A'?'eba':'ebb'}`} style={{fontSize:'.55rem'}}>{e.side==='A'?nA.split(' ')[0]:nB.split(' ')[0]}</span>
-                    <div style={{fontFamily:'var(--fM)',fontSize:'.5rem',color:'var(--muted)'}}>{fmt(e.time)}</div>
-                    {e.strength!=null&&<div style={{fontFamily:'var(--fH)',fontSize:'.72rem',color:'var(--Y)'}}>{(+e.strength).toFixed(0)}/10</div>}
+                    <div style={{fontFamily:'var(--fM)',fontSize:'.48rem',color:'#8b7a5a'}}>{fmt(e.time)}</div>
+                    {e.strength!=null&&<div style={{fontFamily:'Cinzel,serif',fontSize:'.7rem',color:'#C6A15B',marginTop:2}}>{(+e.strength).toFixed(0)}<span style={{fontSize:'.5rem'}}>/10</span></div>}
                   </div>
                   <div style={{flex:1}}>
-                    <div style={{display:'flex',gap:6,marginBottom:5,flexWrap:'wrap'}}>
-                      <span style={{fontFamily:'var(--fM)',fontSize:'.5rem',color:'var(--O)',textTransform:'uppercase',letterSpacing:'.08em'}}>{e.type}</span>
-                      <span style={{fontFamily:'var(--fM)',fontSize:'.5rem',color:'var(--muted)'}}>{e.phase}</span>
+                    <div style={{display:'flex',gap:6,marginBottom:5,flexWrap:'wrap',alignItems:'center'}}>
+                      {e.type&&<span style={{fontFamily:'var(--fM)',fontSize:'.46rem',color:e.side==='A'?'var(--A)':'var(--B)',textTransform:'uppercase',letterSpacing:'.1em',background:e.side==='A'?'rgba(44,74,110,.08)':'rgba(140,58,48,.08)',padding:'1px 6px',borderRadius:3}}>{e.type}</span>}
+                      {e.phase&&<span style={{fontFamily:'var(--fM)',fontSize:'.46rem',color:'#8b7a5a'}}>{e.phase}</span>}
                     </div>
-                    <p style={{fontFamily:'var(--fC)',fontSize:'.86rem',color:'var(--txt)',lineHeight:1.72,fontStyle:'italic',margin:0}}>{e.formalized||e.raw}</p>
+                    <p style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:'.92rem',color:'#1A0E04',lineHeight:1.78,fontStyle:'italic',margin:0}}>{e.formalized||e.raw}</p>
                     {e.raw&&e.formalized&&e.raw!==e.formalized&&(
-                      <p style={{fontFamily:'var(--fM)',fontSize:'.6rem',color:'var(--muted)',marginTop:5,paddingTop:5,borderTop:'1px dashed var(--bd)',fontStyle:'italic',margin:'5px 0 0'}}>🗣 {e.raw}</p>
+                      <p style={{fontFamily:'var(--fM)',fontSize:'.58rem',color:'#8b7a5a',marginTop:6,paddingTop:5,borderTop:'1px solid rgba(212,175,55,.18)',fontStyle:'normal'}}>🗣 {e.raw}</p>
                     )}
                     {e.scores&&(
                       <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
@@ -2745,6 +2768,9 @@ export default function DialectixV6(){
   const [wisdomQuote,setWisdomQuote]=useState(null);          // Feature 7 — Citation de sagesse
   const [tournamentRulesOpen,setTournamentRulesOpen]=useState(false); // Feature 6 — Règles tournoi
   const [formatModalId,setFormatModalId]=useState(null);      // Feature R3 — Modal règles de format
+  const [showAgoraModal,setShowAgoraModal]=useState(false);   // Agora — propose casual debate
+  const [agoraTopic,setAgoraTopic]=useState('');             // Agora — topic input
+  const [agoraBot,setAgoraBot]=useState(null);               // Agora — selected bot (init deferred)
 
   // ── MATCHMAKING
   const [mmPhase,setMMPhase]=useState('idle'); // idle|searching|timedout
@@ -3346,15 +3372,15 @@ export default function DialectixV6(){
                 <button className="btn b-ghost b-sm" onClick={()=>setPage('tournament')}>Tout voir →</button>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))',gap:10,marginBottom:4}}>
-                {/* Carte Proposer — toujours présente à gauche */}
+                {/* Carte Proposer — ouvre AgoraModal (pas le Tournoi Admin) */}
                 <div
-                  onClick={()=>setPage('tournament')}
+                  onClick={()=>setShowAgoraModal(true)}
                   style={{background:'linear-gradient(135deg,rgba(212,175,55,.09),rgba(212,175,55,.03))',border:'2px dashed rgba(212,175,55,.45)',borderRadius:12,padding:'18px 14px',cursor:'pointer',transition:'all .18s',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:7,minHeight:108,textAlign:'center'}}
                   onMouseEnter={e=>{e.currentTarget.style.background='rgba(212,175,55,.14)';e.currentTarget.style.borderColor='rgba(212,175,55,.7)';}}
                   onMouseLeave={e=>{e.currentTarget.style.background='linear-gradient(135deg,rgba(212,175,55,.09),rgba(212,175,55,.03))';e.currentTarget.style.borderColor='rgba(212,175,55,.45)';}}>
                   <div style={{fontSize:'1.5rem',color:'rgba(212,175,55,.85)'}}>✦</div>
                   <div style={{fontFamily:'var(--fH)',fontSize:'.72rem',letterSpacing:'.08em',color:'rgba(212,175,55,.9)'}}>Proposer un sujet</div>
-                  <div style={{fontFamily:'var(--fM)',fontSize:'.5rem',color:'var(--muted)',lineHeight:1.55}}>Lancez un nouveau débat dans l'Agora</div>
+                  <div style={{fontFamily:'var(--fM)',fontSize:'.5rem',color:'var(--muted)',lineHeight:1.55}}>Défi casual — sans validation admin</div>
                 </div>
                 {/* Tournois actifs */}
                 {agoraSessions.length===0&&(
@@ -3369,7 +3395,7 @@ export default function DialectixV6(){
                   const isActive=s.status==='active';
                   return(
                     <div key={s.id}
-                      onClick={()=>setPage('tournament')}
+                      onClick={()=>setShowAgoraModal(true)}
                       style={{background:'var(--s1)',border:'1px solid var(--bd)',borderRadius:12,padding:'14px',cursor:'pointer',transition:'all .18s',boxShadow:'0 2px 8px rgba(0,0,0,.07)',display:'flex',flexDirection:'column',gap:8}}
                       onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--A)';e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow='0 6px 18px rgba(0,0,0,.12)';}}
                       onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--bd)';e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='0 2px 8px rgba(0,0,0,.07)';}}>
@@ -4750,6 +4776,115 @@ export default function DialectixV6(){
             </div>
           </div>
         )}
+
+        {/* ── AGORA MODAL — Casual debate, no admin required ─────────────────── */}
+        {showAgoraModal&&(()=>{
+          const _bot=agoraBot||BOTS[0];
+          const AGORA_TOPICS=[
+            "L'intelligence artificielle menace-t-elle la démocratie ?",
+            "Faut-il instaurer un revenu universel de base ?",
+            "La désobéissance civile est-elle parfois légitime ?",
+            "L'espace public doit-il rester laïc à tout prix ?",
+            "Le progrès technique est-il un bien en soi ?",
+          ];
+          return(
+            <div
+              style={{position:'fixed',inset:0,zIndex:900,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 16px',background:'rgba(10,8,4,.6)',backdropFilter:'blur(7px)'}}
+              onClick={()=>setShowAgoraModal(false)}>
+              <div
+                style={{background:'#FDFAF4',borderRadius:18,padding:'30px 26px',maxWidth:520,width:'100%',
+                  boxShadow:'0 24px 70px rgba(0,0,0,.3)',border:'1px solid rgba(212,175,55,.4)',
+                  animation:'slideUp .3s ease'}}
+                onClick={e=>e.stopPropagation()}>
+
+                {/* Header */}
+                <div style={{textAlign:'center',marginBottom:20}}>
+                  <div style={{fontSize:'1.8rem',marginBottom:6}}>🏛️</div>
+                  <div style={{fontFamily:'Cinzel,Georgia,serif',fontSize:'1.05rem',letterSpacing:'.14em',color:'#2a1a06',marginBottom:4}}>L'Agora des Débats</div>
+                  <div style={{fontFamily:'var(--fC)',fontSize:'.82rem',fontStyle:'italic',color:'#7a6a50',lineHeight:1.6}}>Proposez un sujet et défiez un adversaire — sans validation admin</div>
+                </div>
+
+                {/* Séparateur or */}
+                <div style={{height:1,background:'linear-gradient(90deg,transparent,rgba(212,175,55,.5),transparent)',marginBottom:20}}/>
+
+                {/* Sujets suggérés */}
+                <div style={{marginBottom:14}}>
+                  <div style={{fontFamily:'var(--fM)',fontSize:'.5rem',color:'#8b6914',letterSpacing:'.1em',textTransform:'uppercase',marginBottom:8}}>✦ Sujets suggérés</div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                    {AGORA_TOPICS.map(t=>(
+                      <button key={t}
+                        onClick={()=>setAgoraTopic(t)}
+                        style={{fontFamily:'var(--fC)',fontSize:'.72rem',fontStyle:'italic',padding:'5px 11px',
+                          borderRadius:20,cursor:'pointer',transition:'all .15s',border:'1px solid',lineHeight:1.4,
+                          background:agoraTopic===t?'rgba(212,175,55,.18)':'rgba(255,252,245,.8)',
+                          borderColor:agoraTopic===t?'#d4af37':'rgba(212,175,55,.3)',
+                          color:agoraTopic===t?'#5a3a06':'#5c4f38'}}>
+                        {t.length>55?t.slice(0,55)+'…':t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sujet libre */}
+                <div style={{marginBottom:16}}>
+                  <div style={{fontFamily:'var(--fM)',fontSize:'.5rem',color:'#8b6914',letterSpacing:'.1em',textTransform:'uppercase',marginBottom:6}}>✦ Ou proposez le vôtre</div>
+                  <input
+                    className="fi"
+                    placeholder="Votre sujet de débat…"
+                    value={agoraTopic}
+                    onChange={e=>setAgoraTopic(e.target.value)}
+                    style={{width:'100%',background:'rgba(255,252,240,.8)',border:'1px solid rgba(212,175,55,.35)',borderRadius:8,padding:'9px 12px',fontFamily:'var(--fC)',fontSize:'.82rem',fontStyle:'italic',color:'#2a1a06',boxSizing:'border-box'}}
+                  />
+                </div>
+
+                {/* Choix de l'adversaire */}
+                <div style={{marginBottom:20}}>
+                  <div style={{fontFamily:'var(--fM)',fontSize:'.5rem',color:'#8b6914',letterSpacing:'.1em',textTransform:'uppercase',marginBottom:8}}>✦ Adversaire</div>
+                  <div style={{display:'flex',gap:8}}>
+                    {BOTS.map(b=>(
+                      <button key={b.id}
+                        onClick={()=>setAgoraBot(b)}
+                        style={{flex:1,padding:'10px 8px',borderRadius:9,cursor:'pointer',transition:'all .15s',textAlign:'center',border:`2px solid ${_bot.id===b.id?b.color:'var(--bd)'}`,
+                          background:_bot.id===b.id?`${b.color}12`:'var(--s1)'}}>
+                        <div style={{fontSize:'1.2rem'}}>{b.emoji}</div>
+                        <div style={{fontFamily:'var(--fH)',fontSize:'.6rem',letterSpacing:'.04em',color:_bot.id===b.id?b.color:'var(--dim)',marginTop:3}}>{b.name}</div>
+                        <div style={{fontFamily:'var(--fM)',fontSize:'.46rem',color:'var(--muted)',marginTop:1}}>ELO {b.elo}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{display:'flex',gap:10}}>
+                  <button
+                    className="btn b-a b-lg"
+                    style={{flex:1,justifyContent:'center',background:'linear-gradient(135deg,#2C4A6E,#3A6E52)',border:'none',fontFamily:'Cinzel,serif',letterSpacing:'.08em'}}
+                    onClick={()=>{
+                      const topic=agoraTopic.trim()||TOPICS[rnd(0,TOPICS.length-1)];
+                      setShowAgoraModal(false);
+                      setAgoraTopic('');
+                      setPage('train');
+                      startBotDebate(_bot,topic);
+                    }}>
+                    ⚔️ Débattre maintenant
+                  </button>
+                  <button
+                    className="btn b-ghost"
+                    style={{fontFamily:'var(--fM)',fontSize:'.6rem'}}
+                    onClick={()=>{setShowAgoraModal(false);setPage('tournament');}}>
+                    🏆 Tournoi classé
+                  </button>
+                </div>
+
+                <button
+                  onClick={()=>setShowAgoraModal(false)}
+                  style={{display:'block',width:'100%',marginTop:12,background:'transparent',border:'none',cursor:'pointer',fontFamily:'var(--fM)',fontSize:'.58rem',color:'var(--muted)',textAlign:'center'}}>
+                  Annuler ✕
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* TOAST */}
         {toast&&<Toast msg={toast.msg} type={toast.type} onDone={()=>setToast(null)}/>}
