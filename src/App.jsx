@@ -3281,6 +3281,26 @@ export default function DialectixV6(){
   const HomePage=()=>{
     const [selBot,setSelBot]=useState(BOTS[0]);
     const [customTopic,setCustomTopic]=useState('');
+    const [agoraSessions,setAgoraSessions]=useState([]);
+
+    useEffect(()=>{
+      /* Tente de charger les 3 derniers tournois actifs depuis Supabase */
+      SB.from('tournament_sessions')
+        .select('id,weekly_topic,weeklyTopic,status,created_at')
+        .in('status',['active','pending','open'])
+        .order('created_at',{ascending:false})
+        .limit(3)
+        .then(({data})=>{ if(data?.length) setAgoraSessions(data); })
+        .catch(()=>{
+          /* Fallback localStorage */
+          try{
+            const t=JSON.parse(localStorage.getItem('dialectix_tournament_v1')||'null');
+            if(t&&(t.status==='active'||t.status==='pending')){
+              setAgoraSessions([{id:t.id,weekly_topic:t.weeklyTopic,status:t.status,created_at:t.createdAt}]);
+            }
+          }catch{}
+        });
+    },[]);
     return(
       <div className="home">
         <div className="home-hero">
@@ -3318,6 +3338,56 @@ export default function DialectixV6(){
                 ))}
               </div>
             </div>}
+
+            {/* ── L'Agora des Débats ── */}
+            <div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+                <div style={{fontFamily:'var(--fH)',fontSize:'1rem',letterSpacing:'.1em',textTransform:'uppercase'}}>🏛️ L'Agora des Débats</div>
+                <button className="btn b-ghost b-sm" onClick={()=>setPage('tournament')}>Tout voir →</button>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))',gap:10,marginBottom:4}}>
+                {/* Carte Proposer — toujours présente à gauche */}
+                <div
+                  onClick={()=>setPage('tournament')}
+                  style={{background:'linear-gradient(135deg,rgba(212,175,55,.09),rgba(212,175,55,.03))',border:'2px dashed rgba(212,175,55,.45)',borderRadius:12,padding:'18px 14px',cursor:'pointer',transition:'all .18s',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:7,minHeight:108,textAlign:'center'}}
+                  onMouseEnter={e=>{e.currentTarget.style.background='rgba(212,175,55,.14)';e.currentTarget.style.borderColor='rgba(212,175,55,.7)';}}
+                  onMouseLeave={e=>{e.currentTarget.style.background='linear-gradient(135deg,rgba(212,175,55,.09),rgba(212,175,55,.03))';e.currentTarget.style.borderColor='rgba(212,175,55,.45)';}}>
+                  <div style={{fontSize:'1.5rem',color:'rgba(212,175,55,.85)'}}>✦</div>
+                  <div style={{fontFamily:'var(--fH)',fontSize:'.72rem',letterSpacing:'.08em',color:'rgba(212,175,55,.9)'}}>Proposer un sujet</div>
+                  <div style={{fontFamily:'var(--fM)',fontSize:'.5rem',color:'var(--muted)',lineHeight:1.55}}>Lancez un nouveau débat dans l'Agora</div>
+                </div>
+                {/* Tournois actifs */}
+                {agoraSessions.length===0&&(
+                  <div style={{gridColumn:'span 2',background:'var(--s1)',border:'1px solid var(--bd)',borderRadius:12,padding:'16px 14px',textAlign:'center',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    <div style={{fontFamily:'var(--fM)',fontSize:'.6rem',color:'var(--muted)',lineHeight:1.7}}>
+                      Aucun tournoi actif en ce moment.<br/>Soyez le premier à en lancer un !
+                    </div>
+                  </div>
+                )}
+                {agoraSessions.map(s=>{
+                  const topic=s.weekly_topic||s.weeklyTopic||'Sujet à définir';
+                  const isActive=s.status==='active';
+                  return(
+                    <div key={s.id}
+                      onClick={()=>setPage('tournament')}
+                      style={{background:'var(--s1)',border:'1px solid var(--bd)',borderRadius:12,padding:'14px',cursor:'pointer',transition:'all .18s',boxShadow:'0 2px 8px rgba(0,0,0,.07)',display:'flex',flexDirection:'column',gap:8}}
+                      onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--A)';e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow='0 6px 18px rgba(0,0,0,.12)';}}
+                      onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--bd)';e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='0 2px 8px rgba(0,0,0,.07)';}}>
+                      <div style={{display:'flex',alignItems:'center',gap:6}}>
+                        <div style={{width:7,height:7,borderRadius:'50%',background:isActive?'var(--G)':'var(--Y)',flexShrink:0,animation:isActive?'blink .9s infinite':undefined}}/>
+                        <div style={{fontFamily:'var(--fM)',fontSize:'.46rem',color:isActive?'var(--G)':'var(--Y)',textTransform:'uppercase',letterSpacing:'.1em'}}>{isActive?'En cours':'En attente'}</div>
+                      </div>
+                      <div style={{fontFamily:'var(--fC)',fontSize:'.76rem',fontStyle:'italic',color:'var(--txt)',lineHeight:1.55,flex:1}}>
+                        «&nbsp;{topic.length>75?topic.slice(0,75)+'…':topic}&nbsp;»
+                      </div>
+                      <button className="btn b-a b-sm" style={{width:'100%',justifyContent:'center',fontSize:'.58rem',marginTop:'auto'}}>
+                        ⚔️ Rejoindre l'Arène
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
             {/* Quick train */}
             <div>
@@ -3771,16 +3841,26 @@ export default function DialectixV6(){
                       border:isSelected?'2px solid var(--Y)':'2px solid var(--bd)',
                       background:isSelected?'rgba(212,175,55,.1)':'var(--s2)',transition:'all .18s',
                       boxShadow:isSelected?'0 0 10px rgba(212,175,55,.35)':'none'}}>
-                    <div style={{width:'100%',aspectRatio:'1',borderRadius:8,background:'var(--s3)',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4,overflow:'hidden',position:'relative'}}>
+                    <div style={{width:'100%',aspectRatio:'1',borderRadius:'50%',background:'var(--s3)',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:4,overflow:'hidden',position:'relative'}}>
                       <img src={url} alt={label}
-                        style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:8,display:'block'}}
+                        style={{width:'100%',height:'100%',objectFit:'cover',borderRadius:'50%',display:'block'}}
                         onLoad={e=>{e.target.style.opacity='1';if(e.target.nextSibling)e.target.nextSibling.style.display='none';}}
-                        onError={e=>{e.target.style.display='none';if(e.target.nextSibling)e.target.nextSibling.style.display='flex';}}
+                        onError={e=>{
+                          /* essaie .jpg si .png échoue, sinon affiche la pièce antique */
+                          if(e.target.src.endsWith('.png')){
+                            e.target.src=e.target.src.replace('.png','.jpg');
+                          } else {
+                            e.target.style.display='none';
+                            if(e.target.nextSibling)e.target.nextSibling.style.display='flex';
+                          }
+                        }}
                       />
-                      {/* Placeholder visible si l'image ne charge pas */}
-                      <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-                        background:'linear-gradient(135deg,rgba(212,175,55,.12),rgba(212,175,55,.05))',
-                        fontFamily:'Georgia,serif',fontSize:'1.4rem',color:'rgba(212,175,55,.8)',borderRadius:8}}>
+                      {/* Pièce antique — visible si les deux extensions échouent */}
+                      <div style={{position:'absolute',inset:0,display:'none',flexDirection:'column',alignItems:'center',justifyContent:'center',
+                        background:'radial-gradient(circle,#FDFAF4 55%,#F0DCA0)',
+                        border:'2px solid #D4AF37',
+                        fontFamily:'Georgia,serif',fontSize:'1.8rem',color:'#8b6914',borderRadius:'50%',
+                        boxShadow:'inset 0 0 10px rgba(212,175,55,.35),0 0 6px rgba(212,175,55,.25)'}}>
                         {BUST_EMOJI[idx]||'🏛'}
                       </div>
                     </div>

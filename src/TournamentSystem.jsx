@@ -1892,6 +1892,31 @@ export default function TournamentSystem({ user, saveUser, setPage, showToast, o
               </div>
             )}
 
+            {/* ── 📜 Les Lois de l'Agora ── */}
+            <div style={{
+              background: 'linear-gradient(135deg,rgba(212,175,55,.07),rgba(212,175,55,.03))',
+              border: '1px solid rgba(212,175,55,.35)',
+              borderLeft: '3px solid #D4AF37',
+              borderRadius: 10, padding: '12px 14px', marginBottom: 18,
+            }}>
+              <div style={{ fontFamily: 'Georgia,"Playfair Display",serif', fontSize: '.68rem', fontWeight: 700, color: '#8b6914', letterSpacing: '.06em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                📜 Les Lois de l'Agora
+              </div>
+              {[
+                ['⚔️', "L'attaque ad hominem est interdite", "Argue les idées, jamais les personnes."],
+                ['💡', 'Une idée par argument', "Chaque prise de parole défend une thèse unique et clairement formulée."],
+                ['⚖️', "Le verdict de l'Oracle est souverain", "La décision de l'IA est définitive, sauf contestation motivée (−50 XP)."],
+              ].map(([icon, title, desc]) => (
+                <div key={title} style={{ display: 'flex', gap: 8, marginBottom: 7, alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '.72rem', flexShrink: 0, marginTop: 1 }}>{icon}</span>
+                  <div>
+                    <div style={{ fontFamily: 'var(--fB)', fontSize: '.6rem', fontWeight: 700, color: '#5a4010', marginBottom: 1 }}>{title}</div>
+                    <div style={{ fontFamily: 'var(--fM)', fontSize: '.55rem', color: '#7a6a50', lineHeight: 1.5 }}>{desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
             {/* ── Boutons de camp : 1 clic = sélection + inscription immédiate ── */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
               {[
